@@ -11,8 +11,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 // CMap と標準フォントの URL を設定（日本語などの CJK フォント対応）
-const CMAP_URL = '/cmaps/';
-const STANDARD_FONT_URL = '/standard_fonts/';
+const CMAP_URL = `${import.meta.env.BASE_URL}cmaps/`;
+const STANDARD_FONT_URL = `${import.meta.env.BASE_URL}standard_fonts/`;
 
 // ズームプリセット
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
