@@ -26,6 +26,7 @@ export function PdfViewer() {
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [rotation, setRotation] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -38,7 +39,7 @@ export function PdfViewer() {
 
       try {
         const page = await doc.getPage(pageNum);
-        const viewport = page.getViewport({ scale });
+        const viewport = page.getViewport({ scale, rotation });
 
         canvas.height = viewport.height;
         canvas.width = viewport.width;
@@ -57,7 +58,7 @@ export function PdfViewer() {
         );
       }
     },
-    [scale],
+    [scale, rotation],
   );
 
   // ページが変更されたらレンダリング
@@ -85,6 +86,7 @@ export function PdfViewer() {
     setError(null);
     setPdfDoc(null);
     setCurrentPage(1);
+    setRotation(0);
 
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -143,6 +145,15 @@ export function PdfViewer() {
 
   const handleZoomChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setScale(Number(event.target.value));
+  };
+
+  // 回転操作
+  const rotateClockwise = () => {
+    setRotation((r) => (r + 90) % 360);
+  };
+
+  const rotateCounterClockwise = () => {
+    setRotation((r) => (r - 90 + 360) % 360);
   };
 
   // 全画面表示の切り替え
@@ -230,8 +241,14 @@ export function PdfViewer() {
             </div>
 
             <div className="pdf-view-controls">
+              <button onClick={rotateCounterClockwise} title="反時計回りに回転">
+                ↺
+              </button>
+              <button onClick={rotateClockwise} title="時計回りに回転">
+                ↻
+              </button>
               <button onClick={toggleFullscreen} title="全画面表示">
-                {isFullscreen ? '⛶' : '⛶'}
+                ⛶
               </button>
             </div>
           </div>
