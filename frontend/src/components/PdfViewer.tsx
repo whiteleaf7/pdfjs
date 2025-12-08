@@ -361,9 +361,12 @@ export function PdfViewer() {
       setLoading(true);
       setError(null);
 
+      // ArrayBufferはpdf.jsに渡すとdetachされるのでコピーを使用
+      const dataCopy = data.slice(0);
+
       try {
         const doc = await pdfjsLib.getDocument({
-          data,
+          data: dataCopy,
           cMapUrl: CMAP_URL,
           cMapPacked: true,
           standardFontDataUrl: STANDARD_FONT_URL,
@@ -383,7 +386,7 @@ export function PdfViewer() {
           'code' in err &&
           (err as { code: number }).code === PasswordResponses.NEED_PASSWORD
         ) {
-          // パスワードが必要
+          // パスワードが必要（元のdataを保存、まだdetachされていない）
           setPendingPdfData(data);
           setShowPasswordDialog(true);
           setPasswordError(null);
