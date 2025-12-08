@@ -6,7 +6,7 @@ function App() {
   return (
     <div className="app">
       <h1>PDF Viewer</h1>
-      <PdfViewer scale={1.5} />
+      <PdfViewer />
     </div>
   );
 }

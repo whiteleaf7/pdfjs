@@ -12,16 +12,19 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 const CMAP_URL = '/cmaps/';
 const STANDARD_FONT_URL = '/standard_fonts/';
 
-interface PdfViewerProps {
-  scale?: number;
-}
+// ズームプリセット
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const ZOOM_STEP = 0.25;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
 
-export function PdfViewer({ scale = 1.5 }: PdfViewerProps) {
+export function PdfViewer() {
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scale, setScale] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,6 +118,19 @@ export function PdfViewer({ scale = 1.5 }: PdfViewerProps) {
     event.preventDefault();
   };
 
+  // ズーム操作
+  const zoomIn = () => {
+    setScale((s) => Math.min(MAX_ZOOM, s + ZOOM_STEP));
+  };
+
+  const zoomOut = () => {
+    setScale((s) => Math.max(MIN_ZOOM, s - ZOOM_STEP));
+  };
+
+  const handleZoomChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setScale(Number(event.target.value));
+  };
+
   return (
     <div className="pdf-viewer">
       <div
@@ -139,22 +155,45 @@ export function PdfViewer({ scale = 1.5 }: PdfViewerProps) {
 
       {pdfDoc && (
         <>
-          <div className="pdf-navigation">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              ← 前のページ
-            </button>
-            <span>
-              {currentPage} / {totalPages} ページ
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              次のページ →
-            </button>
+          <div className="pdf-toolbar">
+            <div className="pdf-navigation">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                ← 前
+              </button>
+              <span>
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+              >
+                次 →
+              </button>
+            </div>
+
+            <div className="pdf-zoom-controls">
+              <button onClick={zoomOut} disabled={scale <= MIN_ZOOM}>
+                −
+              </button>
+              <select value={scale} onChange={handleZoomChange}>
+                {ZOOM_PRESETS.map((preset) => (
+                  <option key={preset} value={preset}>
+                    {Math.round(preset * 100)}%
+                  </option>
+                ))}
+                {!ZOOM_PRESETS.includes(scale) && (
+                  <option value={scale}>{Math.round(scale * 100)}%</option>
+                )}
+              </select>
+              <button onClick={zoomIn} disabled={scale >= MAX_ZOOM}>
+                +
+              </button>
+            </div>
           </div>
 
           <div className="pdf-page-container">

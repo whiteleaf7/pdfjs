@@ -43,17 +43,26 @@
   font-size: 1.1rem;
 }
 
-.pdf-navigation {
+.pdf-toolbar {
   display: flex;
   align-items: center;
   gap: 1rem;
   padding: 0.5rem 1rem;
   background-color: rgba(255, 255, 255, 0.1);
   border-radius: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
-.pdf-navigation button {
-  padding: 0.5rem 1rem;
+.pdf-navigation {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pdf-navigation button,
+.pdf-zoom-controls button {
+  padding: 0.5rem 0.75rem;
   font-size: 0.9rem;
   cursor: pointer;
   border: none;
@@ -63,18 +72,40 @@
   transition: background-color 0.2s;
 }
 
-.pdf-navigation button:hover:not(:disabled) {
+.pdf-navigation button:hover:not(:disabled),
+.pdf-zoom-controls button:hover:not(:disabled) {
   background-color: #535bf2;
 }
 
-.pdf-navigation button:disabled {
+.pdf-navigation button:disabled,
+.pdf-zoom-controls button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .pdf-navigation span {
-  min-width: 120px;
+  min-width: 80px;
   text-align: center;
+}
+
+.pdf-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pdf-zoom-controls select {
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: 4px;
+  background-color: #444;
+  color: white;
+  cursor: pointer;
+}
+
+.pdf-zoom-controls select:hover {
+  background-color: #555;
 }
 
 .pdf-page-container {
