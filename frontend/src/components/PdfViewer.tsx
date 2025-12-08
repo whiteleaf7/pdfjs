@@ -96,9 +96,10 @@ export function PdfViewer() {
           ? (textItem.width * viewport.scale) / textItem.str.length
           : fontSize * 0.6;
 
-        const baseLeft = tx[4];
-        // ベースライン（テキスト下端）からフォントサイズ分上にずらす
-        const baseTop = tx[5] - fontSize;
+        // ベースライン（テキスト下端）からフォントサイズ分を回転方向に合わせて調整
+        const angleRad = (angle * Math.PI) / 180;
+        const baseLeft = tx[4] - fontSize * Math.sin(angleRad);
+        const baseTop = tx[5] - fontSize * Math.cos(angleRad);
 
         // span要素を作成するヘルパー関数
         const createSpan = (
