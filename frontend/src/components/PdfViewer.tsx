@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 
 // pdf.js の Worker を設定
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -18,6 +19,13 @@ const ZOOM_STEP = 0.25;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 
+// 検索結果の型
+interface SearchMatch {
+  pageNum: number;
+  itemIndex: number;
+  text: string;
+}
+
 export function PdfViewer() {
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -27,9 +35,86 @@ export function PdfViewer() {
   const [scale, setScale] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [rotation, setRotation] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchMatch[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+  const [isSearching, setIsSearching] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
+
+  // テキストレイヤーをレンダリング
+  const renderTextLayer = useCallback(
+    async (page: PDFPageProxy, viewport: pdfjsLib.PageViewport) => {
+      const textLayer = textLayerRef.current;
+      if (!textLayer) return;
+
+      // 既存のテキストレイヤーをクリア
+      textLayer.innerHTML = '';
+      textLayer.style.width = `${viewport.width}px`;
+      textLayer.style.height = `${viewport.height}px`;
+
+      const textContent = await page.getTextContent();
+
+      for (const item of textContent.items) {
+        if (!('str' in item)) continue;
+        const textItem = item as TextItem;
+        if (!textItem.str) continue;
+
+        const tx = pdfjsLib.Util.transform(
+          viewport.transform,
+          textItem.transform,
+        );
+
+        const span = document.createElement('span');
+        span.textContent = textItem.str;
+        span.style.position = 'absolute';
+        span.style.left = `${tx[4]}px`;
+        span.style.top = `${viewport.height - tx[5]}px`;
+        span.style.fontSize = `${Math.abs(tx[0])}px`;
+        span.style.fontFamily = textItem.fontName || 'sans-serif';
+        span.style.transformOrigin = 'left bottom';
+
+        textLayer.appendChild(span);
+      }
+    },
+    [],
+  );
+
+  // 検索結果をハイライト
+  const highlightSearchResults = useCallback(
+    (pageNum: number) => {
+      const textLayer = textLayerRef.current;
+      if (!textLayer || !searchQuery) return;
+
+      const spans = textLayer.querySelectorAll('span');
+      const query = searchQuery.toLowerCase();
+
+      spans.forEach((span) => {
+        const text = span.textContent?.toLowerCase() || '';
+        if (text.includes(query)) {
+          span.classList.add('pdf-search-highlight');
+
+          // 現在のマッチをハイライト
+          const matchOnPage = searchResults.filter(
+            (m) => m.pageNum === pageNum,
+          );
+          const isCurrentMatch = matchOnPage.some(
+            (m) =>
+              searchResults.indexOf(m) === currentMatchIndex &&
+              span.textContent?.includes(m.text),
+          );
+          if (isCurrentMatch) {
+            span.classList.add('pdf-search-current');
+          }
+        } else {
+          span.classList.remove('pdf-search-highlight', 'pdf-search-current');
+        }
+      });
+    },
+    [searchQuery, searchResults, currentMatchIndex],
+  );
 
   // ページをレンダリング
   const renderPage = useCallback(
@@ -52,14 +137,88 @@ export function PdfViewer() {
           canvas,
           viewport,
         }).promise;
+
+        // テキストレイヤーをレンダリング
+        await renderTextLayer(page, viewport);
+
+        // 検索結果のハイライトを更新
+        highlightSearchResults(pageNum);
       } catch (err) {
         setError(
           `ページのレンダリングに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     },
-    [scale, rotation],
+    [scale, rotation, renderTextLayer, highlightSearchResults],
   );
+
+  // 検索を実行
+  const performSearch = useCallback(async () => {
+    if (!pdfDoc || !searchQuery.trim()) {
+      setSearchResults([]);
+      setCurrentMatchIndex(-1);
+      return;
+    }
+
+    setIsSearching(true);
+    const results: SearchMatch[] = [];
+    const query = searchQuery.toLowerCase();
+
+    try {
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const textContent = await page.getTextContent();
+
+        textContent.items.forEach((item, index) => {
+          if ('str' in item) {
+            const textItem = item as TextItem;
+            if (textItem.str.toLowerCase().includes(query)) {
+              results.push({
+                pageNum,
+                itemIndex: index,
+                text: textItem.str,
+              });
+            }
+          }
+        });
+      }
+
+      setSearchResults(results);
+      setCurrentMatchIndex(results.length > 0 ? 0 : -1);
+
+      // 最初の結果のページに移動
+      if (results.length > 0) {
+        setCurrentPage(results[0].pageNum);
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  }, [pdfDoc, searchQuery]);
+
+  // 次の検索結果に移動
+  const goToNextMatch = () => {
+    if (searchResults.length === 0) return;
+    const nextIndex = (currentMatchIndex + 1) % searchResults.length;
+    setCurrentMatchIndex(nextIndex);
+    setCurrentPage(searchResults[nextIndex].pageNum);
+  };
+
+  // 前の検索結果に移動
+  const goToPrevMatch = () => {
+    if (searchResults.length === 0) return;
+    const prevIndex =
+      (currentMatchIndex - 1 + searchResults.length) % searchResults.length;
+    setCurrentMatchIndex(prevIndex);
+    setCurrentPage(searchResults[prevIndex].pageNum);
+  };
+
+  // 検索クエリが変更されたら検索を実行
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      performSearch();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, performSearch]);
 
   // ページが変更されたらレンダリング
   useEffect(() => {
@@ -67,6 +226,11 @@ export function PdfViewer() {
       renderPage(pdfDoc, currentPage);
     }
   }, [pdfDoc, currentPage, renderPage]);
+
+  // 検索結果が変更されたらハイライトを更新
+  useEffect(() => {
+    highlightSearchResults(currentPage);
+  }, [currentMatchIndex, highlightSearchResults, currentPage]);
 
   // 全画面状態の監視
   useEffect(() => {
@@ -87,6 +251,9 @@ export function PdfViewer() {
     setPdfDoc(null);
     setCurrentPage(1);
     setRotation(0);
+    setSearchQuery('');
+    setSearchResults([]);
+    setCurrentMatchIndex(-1);
 
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -173,6 +340,23 @@ export function PdfViewer() {
     }
   };
 
+  // 検索入力ハンドラ
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+  };
+
+  const handleSearchKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === 'Enter') {
+      if (event.shiftKey) {
+        goToPrevMatch();
+      } else {
+        goToNextMatch();
+      }
+    }
+  };
+
   return (
     <div
       ref={viewerRef}
@@ -253,8 +437,40 @@ export function PdfViewer() {
             </div>
           </div>
 
+          <div className="pdf-search-bar">
+            <input
+              type="text"
+              placeholder="検索..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              onKeyDown={handleSearchKeyDown}
+            />
+            {searchResults.length > 0 && (
+              <>
+                <span className="pdf-search-count">
+                  {currentMatchIndex + 1} / {searchResults.length}
+                </span>
+                <button onClick={goToPrevMatch} title="前の結果">
+                  ↑
+                </button>
+                <button onClick={goToNextMatch} title="次の結果">
+                  ↓
+                </button>
+              </>
+            )}
+            {isSearching && (
+              <span className="pdf-search-status">検索中...</span>
+            )}
+            {searchQuery && searchResults.length === 0 && !isSearching && (
+              <span className="pdf-search-status">見つかりません</span>
+            )}
+          </div>
+
           <div className="pdf-page-container">
-            <canvas ref={canvasRef} className="pdf-page" />
+            <div className="pdf-page-wrapper">
+              <canvas ref={canvasRef} className="pdf-page" />
+              <div ref={textLayerRef} className="pdf-text-layer" />
+            </div>
           </div>
         </>
       )}
