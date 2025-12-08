@@ -194,10 +194,23 @@ export function PdfViewer() {
 
       try {
         const page = await doc.getPage(pageNum);
-        const viewport = page.getViewport({ scale, rotation });
+        // 表示用のviewport
+        const displayViewport = page.getViewport({ scale, rotation });
 
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+        // 高解像度レンダリング用のスケール（デバイスピクセル比を考慮）
+        const outputScale = window.devicePixelRatio || 1;
+        const renderViewport = page.getViewport({
+          scale: scale * outputScale,
+          rotation,
+        });
+
+        // キャンバスの実際のピクセルサイズ（高解像度）
+        canvas.width = renderViewport.width;
+        canvas.height = renderViewport.height;
+
+        // CSSでの表示サイズ（論理サイズ）
+        canvas.style.width = `${displayViewport.width}px`;
+        canvas.style.height = `${displayViewport.height}px`;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -205,11 +218,11 @@ export function PdfViewer() {
         await page.render({
           canvasContext: ctx,
           canvas,
-          viewport,
+          viewport: renderViewport,
         }).promise;
 
-        // テキストレイヤーをレンダリング（検索クエリを渡してハイライト）
-        await renderTextLayer(page, viewport, query);
+        // テキストレイヤーをレンダリング（表示用のviewportを使用）
+        await renderTextLayer(page, displayViewport, query);
       } catch (err) {
         setError(
           `ページのレンダリングに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
