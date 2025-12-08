@@ -119,8 +119,6 @@
 
 .pdf-page-container {
   width: 100%;
-  display: flex;
-  justify-content: center;
   background-color: #333;
   border-radius: 8px;
   padding: 1rem;
@@ -210,6 +208,7 @@
 .pdf-page-wrapper {
   position: relative;
   display: inline-block;
+  margin: auto;
 }
 
 /* テキストレイヤー */
