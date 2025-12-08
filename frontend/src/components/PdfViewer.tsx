@@ -57,7 +57,11 @@ export function PdfViewer() {
 
   // テキストレイヤーをレンダリング
   const renderTextLayer = useCallback(
-    async (page: PDFPageProxy, viewport: pdfjsLib.PageViewport) => {
+    async (
+      page: PDFPageProxy,
+      viewport: pdfjsLib.PageViewport,
+      query: string,
+    ) => {
       const textLayer = textLayerRef.current;
       if (!textLayer) return;
 
@@ -67,6 +71,7 @@ export function PdfViewer() {
       textLayer.style.height = `${viewport.height}px`;
 
       const textContent = await page.getTextContent();
+      const lowerQuery = query.toLowerCase();
 
       for (const item of textContent.items) {
         if (!('str' in item)) continue;
@@ -83,58 +88,86 @@ export function PdfViewer() {
         const fontWidth = Math.hypot(tx[2], tx[3]);
         const fontSize = Math.min(fontHeight, fontWidth);
 
-        const span = document.createElement('span');
-        span.textContent = textItem.str;
-        span.style.position = 'absolute';
-        span.style.left = `${tx[4]}px`;
-        // HTMLは左上基準、PDFはベースライン基準なので、フォントサイズ分上にずらす
-        span.style.top = `${tx[5] - fontSize}px`;
-        span.style.fontSize = `${fontSize}px`;
-        span.style.fontFamily = textItem.fontName || 'sans-serif';
+        // 1文字あたりの幅を推定
+        const charWidth = textItem.width
+          ? (textItem.width * viewport.scale) / textItem.str.length
+          : fontSize * 0.6;
 
-        textLayer.appendChild(span);
+        const baseLeft = tx[4];
+        const baseTop = tx[5] - fontSize;
+
+        // 検索クエリがある場合、マッチ部分を分割してハイライト
+        if (lowerQuery && textItem.str.toLowerCase().includes(lowerQuery)) {
+          const text = textItem.str;
+          const lowerText = text.toLowerCase();
+          let lastIndex = 0;
+          let currentLeft = baseLeft;
+          let matchIndex: number;
+
+          while (
+            (matchIndex = lowerText.indexOf(lowerQuery, lastIndex)) !== -1
+          ) {
+            // マッチ前のテキスト
+            if (matchIndex > lastIndex) {
+              const beforeText = text.slice(lastIndex, matchIndex);
+              const beforeSpan = document.createElement('span');
+              beforeSpan.textContent = beforeText;
+              beforeSpan.style.position = 'absolute';
+              beforeSpan.style.left = `${currentLeft}px`;
+              beforeSpan.style.top = `${baseTop}px`;
+              beforeSpan.style.fontSize = `${fontSize}px`;
+              beforeSpan.style.fontFamily = textItem.fontName || 'sans-serif';
+              textLayer.appendChild(beforeSpan);
+              currentLeft += beforeText.length * charWidth;
+            }
+
+            // マッチ部分（ハイライト）
+            const matchText = text.slice(matchIndex, matchIndex + query.length);
+            const matchSpan = document.createElement('span');
+            matchSpan.textContent = matchText;
+            matchSpan.style.position = 'absolute';
+            matchSpan.style.left = `${currentLeft}px`;
+            matchSpan.style.top = `${baseTop}px`;
+            matchSpan.style.fontSize = `${fontSize}px`;
+            matchSpan.style.fontFamily = textItem.fontName || 'sans-serif';
+            matchSpan.classList.add('pdf-search-highlight');
+            textLayer.appendChild(matchSpan);
+            currentLeft += matchText.length * charWidth;
+
+            lastIndex = matchIndex + query.length;
+          }
+
+          // 残りのテキスト
+          if (lastIndex < text.length) {
+            const afterText = text.slice(lastIndex);
+            const afterSpan = document.createElement('span');
+            afterSpan.textContent = afterText;
+            afterSpan.style.position = 'absolute';
+            afterSpan.style.left = `${currentLeft}px`;
+            afterSpan.style.top = `${baseTop}px`;
+            afterSpan.style.fontSize = `${fontSize}px`;
+            afterSpan.style.fontFamily = textItem.fontName || 'sans-serif';
+            textLayer.appendChild(afterSpan);
+          }
+        } else {
+          // 検索クエリがない、またはマッチしない場合は通常のレンダリング
+          const span = document.createElement('span');
+          span.textContent = textItem.str;
+          span.style.position = 'absolute';
+          span.style.left = `${baseLeft}px`;
+          span.style.top = `${baseTop}px`;
+          span.style.fontSize = `${fontSize}px`;
+          span.style.fontFamily = textItem.fontName || 'sans-serif';
+          textLayer.appendChild(span);
+        }
       }
     },
     [],
   );
 
-  // 検索結果をハイライト
-  const highlightSearchResults = useCallback(
-    (pageNum: number) => {
-      const textLayer = textLayerRef.current;
-      if (!textLayer || !searchQuery) return;
-
-      const spans = textLayer.querySelectorAll('span');
-      const query = searchQuery.toLowerCase();
-
-      spans.forEach((span) => {
-        const text = span.textContent?.toLowerCase() || '';
-        if (text.includes(query)) {
-          span.classList.add('pdf-search-highlight');
-
-          // 現在のマッチをハイライト
-          const matchOnPage = searchResults.filter(
-            (m) => m.pageNum === pageNum,
-          );
-          const isCurrentMatch = matchOnPage.some(
-            (m) =>
-              searchResults.indexOf(m) === currentMatchIndex &&
-              span.textContent?.includes(m.text),
-          );
-          if (isCurrentMatch) {
-            span.classList.add('pdf-search-current');
-          }
-        } else {
-          span.classList.remove('pdf-search-highlight', 'pdf-search-current');
-        }
-      });
-    },
-    [searchQuery, searchResults, currentMatchIndex],
-  );
-
   // ページをレンダリング
   const renderPage = useCallback(
-    async (doc: PDFDocumentProxy, pageNum: number) => {
+    async (doc: PDFDocumentProxy, pageNum: number, query: string) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
@@ -154,18 +187,15 @@ export function PdfViewer() {
           viewport,
         }).promise;
 
-        // テキストレイヤーをレンダリング
-        await renderTextLayer(page, viewport);
-
-        // 検索結果のハイライトを更新
-        highlightSearchResults(pageNum);
+        // テキストレイヤーをレンダリング（検索クエリを渡してハイライト）
+        await renderTextLayer(page, viewport, query);
       } catch (err) {
         setError(
           `ページのレンダリングに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     },
-    [scale, rotation, renderTextLayer, highlightSearchResults],
+    [scale, rotation, renderTextLayer],
   );
 
   // 検索を実行
@@ -236,17 +266,12 @@ export function PdfViewer() {
     return () => clearTimeout(timer);
   }, [searchQuery, performSearch]);
 
-  // ページが変更されたらレンダリング
+  // ページが変更されたら、または検索クエリが変更されたらレンダリング
   useEffect(() => {
     if (pdfDoc && currentPage > 0) {
-      renderPage(pdfDoc, currentPage);
+      renderPage(pdfDoc, currentPage, searchQuery);
     }
-  }, [pdfDoc, currentPage, renderPage]);
-
-  // 検索結果が変更されたらハイライトを更新
-  useEffect(() => {
-    highlightSearchResults(currentPage);
-  }, [currentMatchIndex, highlightSearchResults, currentPage]);
+  }, [pdfDoc, currentPage, renderPage, searchQuery]);
 
   // 全画面状態の監視
   useEffect(() => {
