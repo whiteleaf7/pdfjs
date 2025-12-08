@@ -88,20 +88,45 @@ export function PdfViewer() {
         const fontWidth = Math.hypot(tx[2], tx[3]);
         const fontSize = Math.min(fontHeight, fontWidth);
 
+        // 回転角度を計算（ラジアン→度）
+        const angle = Math.atan2(tx[1], tx[0]) * (180 / Math.PI);
+
         // 1文字あたりの幅を推定
         const charWidth = textItem.width
           ? (textItem.width * viewport.scale) / textItem.str.length
           : fontSize * 0.6;
 
         const baseLeft = tx[4];
-        const baseTop = tx[5] - fontSize;
+        const baseTop = tx[5];
+
+        // span要素を作成するヘルパー関数
+        const createSpan = (
+          content: string,
+          left: number,
+          top: number,
+          highlight = false,
+        ) => {
+          const span = document.createElement('span');
+          span.textContent = content;
+          span.style.position = 'absolute';
+          span.style.left = `${left}px`;
+          span.style.top = `${top}px`;
+          span.style.fontSize = `${fontSize}px`;
+          span.style.fontFamily = textItem.fontName || 'sans-serif';
+          span.style.transformOrigin = 'left top';
+          span.style.transform = `rotate(${angle}deg)`;
+          if (highlight) {
+            span.classList.add('pdf-search-highlight');
+          }
+          return span;
+        };
 
         // 検索クエリがある場合、マッチ部分を分割してハイライト
         if (lowerQuery && textItem.str.toLowerCase().includes(lowerQuery)) {
           const text = textItem.str;
           const lowerText = text.toLowerCase();
           let lastIndex = 0;
-          let currentLeft = baseLeft;
+          let offset = 0;
           let matchIndex: number;
 
           while (
@@ -110,29 +135,31 @@ export function PdfViewer() {
             // マッチ前のテキスト
             if (matchIndex > lastIndex) {
               const beforeText = text.slice(lastIndex, matchIndex);
-              const beforeSpan = document.createElement('span');
-              beforeSpan.textContent = beforeText;
-              beforeSpan.style.position = 'absolute';
-              beforeSpan.style.left = `${currentLeft}px`;
-              beforeSpan.style.top = `${baseTop}px`;
-              beforeSpan.style.fontSize = `${fontSize}px`;
-              beforeSpan.style.fontFamily = textItem.fontName || 'sans-serif';
-              textLayer.appendChild(beforeSpan);
-              currentLeft += beforeText.length * charWidth;
+              const offsetX =
+                offset * charWidth * Math.cos((angle * Math.PI) / 180);
+              const offsetY =
+                offset * charWidth * Math.sin((angle * Math.PI) / 180);
+              textLayer.appendChild(
+                createSpan(beforeText, baseLeft + offsetX, baseTop + offsetY),
+              );
+              offset += beforeText.length;
             }
 
             // マッチ部分（ハイライト）
             const matchText = text.slice(matchIndex, matchIndex + query.length);
-            const matchSpan = document.createElement('span');
-            matchSpan.textContent = matchText;
-            matchSpan.style.position = 'absolute';
-            matchSpan.style.left = `${currentLeft}px`;
-            matchSpan.style.top = `${baseTop}px`;
-            matchSpan.style.fontSize = `${fontSize}px`;
-            matchSpan.style.fontFamily = textItem.fontName || 'sans-serif';
-            matchSpan.classList.add('pdf-search-highlight');
-            textLayer.appendChild(matchSpan);
-            currentLeft += matchText.length * charWidth;
+            const offsetX =
+              offset * charWidth * Math.cos((angle * Math.PI) / 180);
+            const offsetY =
+              offset * charWidth * Math.sin((angle * Math.PI) / 180);
+            textLayer.appendChild(
+              createSpan(
+                matchText,
+                baseLeft + offsetX,
+                baseTop + offsetY,
+                true,
+              ),
+            );
+            offset += matchText.length;
 
             lastIndex = matchIndex + query.length;
           }
@@ -140,25 +167,17 @@ export function PdfViewer() {
           // 残りのテキスト
           if (lastIndex < text.length) {
             const afterText = text.slice(lastIndex);
-            const afterSpan = document.createElement('span');
-            afterSpan.textContent = afterText;
-            afterSpan.style.position = 'absolute';
-            afterSpan.style.left = `${currentLeft}px`;
-            afterSpan.style.top = `${baseTop}px`;
-            afterSpan.style.fontSize = `${fontSize}px`;
-            afterSpan.style.fontFamily = textItem.fontName || 'sans-serif';
-            textLayer.appendChild(afterSpan);
+            const offsetX =
+              offset * charWidth * Math.cos((angle * Math.PI) / 180);
+            const offsetY =
+              offset * charWidth * Math.sin((angle * Math.PI) / 180);
+            textLayer.appendChild(
+              createSpan(afterText, baseLeft + offsetX, baseTop + offsetY),
+            );
           }
         } else {
           // 検索クエリがない、またはマッチしない場合は通常のレンダリング
-          const span = document.createElement('span');
-          span.textContent = textItem.str;
-          span.style.position = 'absolute';
-          span.style.left = `${baseLeft}px`;
-          span.style.top = `${baseTop}px`;
-          span.style.fontSize = `${fontSize}px`;
-          span.style.fontFamily = textItem.fontName || 'sans-serif';
-          textLayer.appendChild(span);
+          textLayer.appendChild(createSpan(textItem.str, baseLeft, baseTop));
         }
       }
     },
