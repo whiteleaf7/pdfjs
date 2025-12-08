@@ -1,6 +1,6 @@
-import { PdfViewer } from './components/PdfViewer'
-import './components/PdfViewer.css'
-import './App.css'
+import { PdfViewer } from './components/PdfViewer';
+import './components/PdfViewer.css';
+import './App.css';
 
 function App() {
   return (
@@ -8,7 +8,7 @@ function App() {
       <h1>PDF Viewer</h1>
       <PdfViewer scale={1.5} />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

@@ -5,7 +5,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 // pdf.js の Worker を設定
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
+  import.meta.url,
 ).toString();
 
 // CMap と標準フォントの URL を設定（日本語などの CJK フォント対応）
@@ -47,10 +47,12 @@ export function PdfViewer({ scale = 1.5 }: PdfViewerProps) {
           viewport,
         }).promise;
       } catch (err) {
-        setError(`ページのレンダリングに失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+        setError(
+          `ページのレンダリングに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
-    [scale]
+    [scale],
   );
 
   // ページが変更されたらレンダリング
@@ -80,7 +82,9 @@ export function PdfViewer({ scale = 1.5 }: PdfViewerProps) {
       setPdfDoc(doc);
       setTotalPages(doc.numPages);
     } catch (err) {
-      setError(`PDF の読み込みに失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+      setError(
+        `PDF の読み込みに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setLoading(false);
     }
