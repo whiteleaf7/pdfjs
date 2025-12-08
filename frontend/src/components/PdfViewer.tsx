@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { PasswordResponses } from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 
@@ -39,6 +40,12 @@ export function PdfViewer() {
   const [searchResults, setSearchResults] = useState<SearchMatch[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
   const [isSearching, setIsSearching] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [pendingPdfData, setPendingPdfData] = useState<ArrayBuffer | null>(
+    null,
+  );
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -244,36 +251,95 @@ export function PdfViewer() {
     };
   }, []);
 
+  // PDF ファイルを読み込む（パスワード対応）
+  const loadPdfWithPassword = useCallback(
+    async (data: ArrayBuffer, inputPassword?: string) => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const doc = await pdfjsLib.getDocument({
+          data,
+          cMapUrl: CMAP_URL,
+          cMapPacked: true,
+          standardFontDataUrl: STANDARD_FONT_URL,
+          useSystemFonts: true,
+          password: inputPassword,
+        }).promise;
+
+        setPdfDoc(doc);
+        setTotalPages(doc.numPages);
+        setShowPasswordDialog(false);
+        setPassword('');
+        setPasswordError(null);
+        setPendingPdfData(null);
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          'code' in err &&
+          (err as { code: number }).code === PasswordResponses.NEED_PASSWORD
+        ) {
+          // パスワードが必要
+          setPendingPdfData(data);
+          setShowPasswordDialog(true);
+          setPasswordError(null);
+        } else if (
+          err instanceof Error &&
+          'code' in err &&
+          (err as { code: number }).code ===
+            PasswordResponses.INCORRECT_PASSWORD
+        ) {
+          // パスワードが間違っている
+          setPasswordError('パスワードが正しくありません');
+        } else {
+          setError(
+            `PDF の読み込みに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          setShowPasswordDialog(false);
+          setPendingPdfData(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
   // PDF ファイルを読み込む
-  const loadPdf = useCallback(async (file: File) => {
-    setLoading(true);
-    setError(null);
-    setPdfDoc(null);
-    setCurrentPage(1);
-    setRotation(0);
-    setSearchQuery('');
-    setSearchResults([]);
-    setCurrentMatchIndex(-1);
+  const loadPdf = useCallback(
+    async (file: File) => {
+      setPdfDoc(null);
+      setCurrentPage(1);
+      setRotation(0);
+      setSearchQuery('');
+      setSearchResults([]);
+      setCurrentMatchIndex(-1);
+      setShowPasswordDialog(false);
+      setPassword('');
+      setPasswordError(null);
 
-    try {
       const arrayBuffer = await file.arrayBuffer();
-      const doc = await pdfjsLib.getDocument({
-        data: arrayBuffer,
-        cMapUrl: CMAP_URL,
-        cMapPacked: true,
-        standardFontDataUrl: STANDARD_FONT_URL,
-        useSystemFonts: true,
-      }).promise;
+      await loadPdfWithPassword(arrayBuffer);
+    },
+    [loadPdfWithPassword],
+  );
 
-      setPdfDoc(doc);
-      setTotalPages(doc.numPages);
-    } catch (err) {
-      setError(
-        `PDF の読み込みに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    } finally {
-      setLoading(false);
-    }
+  // パスワード送信ハンドラ
+  const handlePasswordSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!pendingPdfData || !password) return;
+      await loadPdfWithPassword(pendingPdfData, password);
+    },
+    [pendingPdfData, password, loadPdfWithPassword],
+  );
+
+  // パスワードダイアログをキャンセル
+  const handlePasswordCancel = useCallback(() => {
+    setShowPasswordDialog(false);
+    setPassword('');
+    setPasswordError(null);
+    setPendingPdfData(null);
   }, []);
 
   // ファイル選択ハンドラ
@@ -381,6 +447,35 @@ export function PdfViewer() {
       {error && <div className="pdf-error">{error}</div>}
 
       {loading && <div className="pdf-loading">PDF を読み込み中...</div>}
+
+      {showPasswordDialog && (
+        <div className="pdf-password-overlay">
+          <div className="pdf-password-dialog">
+            <h3>パスワード保護された PDF</h3>
+            <p>この PDF を開くにはパスワードが必要です。</p>
+            <form onSubmit={handlePasswordSubmit}>
+              <input
+                type="password"
+                placeholder="パスワードを入力..."
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+              />
+              {passwordError && (
+                <div className="pdf-password-error">{passwordError}</div>
+              )}
+              <div className="pdf-password-buttons">
+                <button type="button" onClick={handlePasswordCancel}>
+                  キャンセル
+                </button>
+                <button type="submit" disabled={!password}>
+                  開く
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {pdfDoc && (
         <>

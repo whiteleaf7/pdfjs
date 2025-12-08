@@ -241,3 +241,107 @@
 .pdf-text-layer .pdf-search-current {
   background-color: rgba(255, 165, 0, 0.7);
 }
+
+/* パスワードダイアログ */
+.pdf-password-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.pdf-password-dialog {
+  background-color: #2a2a2a;
+  border-radius: 12px;
+  padding: 2rem;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.pdf-password-dialog h3 {
+  margin: 0 0 0.5rem 0;
+  color: #fff;
+  font-size: 1.25rem;
+}
+
+.pdf-password-dialog p {
+  margin: 0 0 1.5rem 0;
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+.pdf-password-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pdf-password-dialog input[type='password'] {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  border: 2px solid #444;
+  border-radius: 6px;
+  background-color: #333;
+  color: white;
+  box-sizing: border-box;
+}
+
+.pdf-password-dialog input[type='password']:focus {
+  outline: none;
+  border-color: #646cff;
+}
+
+.pdf-password-error {
+  color: #ff6b6b;
+  font-size: 0.85rem;
+  padding: 0.5rem;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-radius: 4px;
+}
+
+.pdf-password-buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.pdf-password-buttons button {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pdf-password-buttons button[type='button'] {
+  background-color: #444;
+  color: #ccc;
+}
+
+.pdf-password-buttons button[type='button']:hover {
+  background-color: #555;
+}
+
+.pdf-password-buttons button[type='submit'] {
+  background-color: #646cff;
+  color: white;
+}
+
+.pdf-password-buttons button[type='submit']:hover:not(:disabled) {
+  background-color: #535bf2;
+}
+
+.pdf-password-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
