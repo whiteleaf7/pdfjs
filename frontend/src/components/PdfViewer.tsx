@@ -25,8 +25,10 @@ export function PdfViewer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const viewerRef = useRef<HTMLDivElement>(null);
 
   // ページをレンダリング
   const renderPage = useCallback(
@@ -64,6 +66,18 @@ export function PdfViewer() {
       renderPage(pdfDoc, currentPage);
     }
   }, [pdfDoc, currentPage, renderPage]);
+
+  // 全画面状態の監視
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   // PDF ファイルを読み込む
   const loadPdf = useCallback(async (file: File) => {
@@ -131,8 +145,28 @@ export function PdfViewer() {
     setScale(Number(event.target.value));
   };
 
+  // 全画面表示の切り替え
+  const toggleFullscreen = async () => {
+    if (!viewerRef.current) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await viewerRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      setError(
+        `全画面表示の切り替えに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
   return (
-    <div className="pdf-viewer">
+    <div
+      ref={viewerRef}
+      className={`pdf-viewer ${isFullscreen ? 'pdf-viewer--fullscreen' : ''}`}
+    >
       <div
         className="pdf-dropzone"
         onDrop={handleDrop}
@@ -192,6 +226,12 @@ export function PdfViewer() {
               </select>
               <button onClick={zoomIn} disabled={scale >= MAX_ZOOM}>
                 +
+              </button>
+            </div>
+
+            <div className="pdf-view-controls">
+              <button onClick={toggleFullscreen} title="全画面表示">
+                {isFullscreen ? '⛶' : '⛶'}
               </button>
             </div>
           </div>
