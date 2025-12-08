@@ -97,7 +97,8 @@ export function PdfViewer() {
           : fontSize * 0.6;
 
         const baseLeft = tx[4];
-        const baseTop = tx[5];
+        // ベースライン（テキスト下端）からフォントサイズ分上にずらす
+        const baseTop = tx[5] - fontSize;
 
         // span要素を作成するヘルパー関数
         const createSpan = (
