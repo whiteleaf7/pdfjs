@@ -1,0 +1,94 @@
+.pdf-viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.pdf-dropzone {
+  width: 100%;
+  padding: 2rem;
+  border: 2px dashed #666;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.pdf-dropzone:hover {
+  border-color: #888;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.pdf-dropzone p {
+  margin: 0;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.pdf-error {
+  color: #ff6b6b;
+  padding: 0.5rem 1rem;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-radius: 4px;
+  width: 100%;
+  text-align: center;
+}
+
+.pdf-loading {
+  color: #4dabf7;
+  padding: 1rem;
+  font-size: 1.1rem;
+}
+
+.pdf-navigation {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.pdf-navigation button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  background-color: #646cff;
+  color: white;
+  transition: background-color 0.2s;
+}
+
+.pdf-navigation button:hover:not(:disabled) {
+  background-color: #535bf2;
+}
+
+.pdf-navigation button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pdf-navigation span {
+  min-width: 120px;
+  text-align: center;
+}
+
+.pdf-page-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  background-color: #333;
+  border-radius: 8px;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.pdf-page {
+  max-width: 100%;
+  height: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
