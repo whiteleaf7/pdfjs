@@ -46,7 +46,11 @@ export function PdfViewer() {
   const [pendingPdfData, setPendingPdfData] = useState<ArrayBuffer | null>(
     null,
   );
+  const [showThumbnails, setShowThumbnails] = useState(false);
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const thumbnailPanelRef = useRef<HTMLDivElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -251,6 +255,55 @@ export function PdfViewer() {
     };
   }, []);
 
+  // サムネイルを生成
+  useEffect(() => {
+    if (!pdfDoc || !showThumbnails) return;
+    if (thumbnails.length === pdfDoc.numPages) return;
+
+    const generateThumbnails = async () => {
+      setIsGeneratingThumbnails(true);
+      const thumbs: string[] = [];
+      const thumbScale = 0.2;
+
+      try {
+        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: thumbScale });
+
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            await page.render({
+              canvasContext: ctx,
+              canvas,
+              viewport,
+            }).promise;
+            thumbs.push(canvas.toDataURL('image/jpeg', 0.7));
+          }
+        }
+        setThumbnails(thumbs);
+      } finally {
+        setIsGeneratingThumbnails(false);
+      }
+    };
+
+    generateThumbnails();
+  }, [pdfDoc, showThumbnails, thumbnails.length]);
+
+  // 現在のページのサムネイルをスクロールして表示
+  useEffect(() => {
+    if (!showThumbnails || !thumbnailPanelRef.current) return;
+    const thumbElement = thumbnailPanelRef.current.querySelector(
+      `[data-page="${currentPage}"]`,
+    );
+    if (thumbElement) {
+      thumbElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [currentPage, showThumbnails]);
+
   // PDF ファイルを読み込む（パスワード対応）
   const loadPdfWithPassword = useCallback(
     async (data: ArrayBuffer, inputPassword?: string) => {
@@ -317,12 +370,18 @@ export function PdfViewer() {
       setShowPasswordDialog(false);
       setPassword('');
       setPasswordError(null);
+      setThumbnails([]);
 
       const arrayBuffer = await file.arrayBuffer();
       await loadPdfWithPassword(arrayBuffer);
     },
     [loadPdfWithPassword],
   );
+
+  // サムネイルパネルの表示切り替え
+  const toggleThumbnails = useCallback(() => {
+    setShowThumbnails((prev) => !prev);
+  }, []);
 
   // パスワード送信ハンドラ
   const handlePasswordSubmit = useCallback(
@@ -520,6 +579,13 @@ export function PdfViewer() {
             </div>
 
             <div className="pdf-view-controls">
+              <button
+                onClick={toggleThumbnails}
+                title="サムネイル"
+                className={showThumbnails ? 'active' : ''}
+              >
+                ▤
+              </button>
               <button onClick={rotateCounterClockwise} title="反時計回りに回転">
                 ↺
               </button>
@@ -561,10 +627,34 @@ export function PdfViewer() {
             )}
           </div>
 
-          <div className="pdf-page-container">
-            <div className="pdf-page-wrapper">
-              <canvas ref={canvasRef} className="pdf-page" />
-              <div ref={textLayerRef} className="pdf-text-layer" />
+          <div className="pdf-content-wrapper">
+            {showThumbnails && (
+              <div className="pdf-thumbnail-panel" ref={thumbnailPanelRef}>
+                {isGeneratingThumbnails && thumbnails.length === 0 && (
+                  <div className="pdf-thumbnail-loading">
+                    サムネイル生成中...
+                  </div>
+                )}
+                {thumbnails.map((thumb, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={`pdf-thumbnail ${currentPage === index + 1 ? 'pdf-thumbnail--active' : ''}`}
+                    onClick={() => setCurrentPage(index + 1)}
+                    data-page={index + 1}
+                  >
+                    <img src={thumb} alt={`ページ ${index + 1}`} />
+                    <span className="pdf-thumbnail-label">{index + 1}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="pdf-page-container">
+              <div className="pdf-page-wrapper">
+                <canvas ref={canvasRef} className="pdf-page" />
+                <div ref={textLayerRef} className="pdf-text-layer" />
+              </div>
             </div>
           </div>
         </>
