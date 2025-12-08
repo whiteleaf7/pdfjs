@@ -78,14 +78,19 @@ export function PdfViewer() {
           textItem.transform,
         );
 
+        // フォントサイズを計算（回転を考慮）
+        const fontHeight = Math.hypot(tx[0], tx[1]);
+        const fontWidth = Math.hypot(tx[2], tx[3]);
+        const fontSize = Math.min(fontHeight, fontWidth);
+
         const span = document.createElement('span');
         span.textContent = textItem.str;
         span.style.position = 'absolute';
         span.style.left = `${tx[4]}px`;
-        span.style.top = `${viewport.height - tx[5]}px`;
-        span.style.fontSize = `${Math.abs(tx[0])}px`;
+        // HTMLは左上基準、PDFはベースライン基準なので、フォントサイズ分上にずらす
+        span.style.top = `${tx[5] - fontSize}px`;
+        span.style.fontSize = `${fontSize}px`;
         span.style.fontFamily = textItem.fontName || 'sans-serif';
-        span.style.transformOrigin = 'left bottom';
 
         textLayer.appendChild(span);
       }
