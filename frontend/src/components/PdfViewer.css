@@ -118,6 +118,7 @@
 }
 
 .pdf-page-container {
+  position: relative;
   width: 100%;
   height: 70vh;
   background-color: #333;
@@ -423,6 +424,37 @@
   font-weight: 600;
 }
 
+/* 重いページのサムネイル */
+.pdf-thumbnail--heavy {
+  border-color: rgba(255, 165, 0, 0.3);
+}
+
+.pdf-thumbnail--heavy:hover {
+  border-color: rgba(255, 165, 0, 0.6);
+}
+
+.pdf-thumbnail-heavy-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background-color: rgba(255, 165, 0, 0.1);
+  border-radius: 4px;
+  gap: 0.25rem;
+}
+
+.pdf-thumbnail-heavy-icon {
+  font-size: 1.5rem;
+}
+
+.pdf-thumbnail-heavy-text {
+  font-size: 0.65rem;
+  color: #ffa500;
+  font-weight: 600;
+}
+
 /* 全画面時のサムネイルパネル */
 .pdf-viewer--fullscreen .pdf-thumbnail-panel {
   max-height: calc(100vh - 180px);
@@ -430,4 +462,278 @@
 
 .pdf-viewer--fullscreen .pdf-content-wrapper {
   flex: 1;
+}
+
+/* スピナーアニメーション */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.pdf-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(100, 108, 255, 0.2);
+  border-top-color: #646cff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.pdf-spinner--small {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+}
+
+/* メインビューアのスピナーオーバーレイ */
+.pdf-rendering-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  z-index: 10;
+}
+
+/* サムネイルパネルのスピナー */
+.pdf-thumbnail-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+/* 解析中テキスト */
+.pdf-analyzing-text {
+  margin-top: 0.5rem;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+/* 重いページ警告 */
+.pdf-heavy-warning {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  z-index: 10;
+}
+
+.pdf-heavy-warning-content {
+  background-color: #2a2a2a;
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.pdf-heavy-warning-content h4 {
+  margin: 0 0 0.75rem 0;
+  color: #ffa500;
+  font-size: 1.1rem;
+}
+
+.pdf-heavy-warning-content p {
+  margin: 0 0 0.75rem 0;
+  color: #ccc;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.pdf-heavy-warning-buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.pdf-heavy-warning-buttons button {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  background-color: #646cff;
+  color: white;
+}
+
+.pdf-heavy-warning-buttons button:hover {
+  background-color: #535bf2;
+}
+
+/* 複雑さの詳細情報 */
+.pdf-complexity-details {
+  background-color: #1a1a1a;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  text-align: left;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.pdf-complexity-section {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.pdf-complexity-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.pdf-complexity-section-title {
+  color: #646cff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.pdf-complexity-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #333;
+  font-size: 0.85rem;
+}
+
+.pdf-complexity-row:last-child {
+  border-bottom: none;
+}
+
+.pdf-complexity-row span:first-child {
+  color: #888;
+}
+
+.pdf-complexity-row span:last-child {
+  color: #fff;
+  font-family: monospace;
+}
+
+.pdf-complexity-fonts {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #333;
+}
+
+.pdf-complexity-fonts > span {
+  display: block;
+  color: #888;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.pdf-complexity-fonts ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.pdf-complexity-fonts li {
+  color: #aaa;
+  font-size: 0.75rem;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.pdf-complexity-font-item {
+  background-color: #222;
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.pdf-complexity-font-item:last-child {
+  margin-bottom: 0;
+}
+
+.pdf-complexity-font-item .pdf-complexity-row {
+  padding: 0.2rem 0;
+  border-bottom: none;
+  font-size: 0.8rem;
+}
+
+/* 重いページの理由表示 */
+.pdf-heavy-reason {
+  color: #ffa500;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(255, 165, 0, 0.1);
+  border-radius: 4px;
+  border-left: 3px solid #ffa500;
+}
+
+.pdf-heavy-reason p {
+  margin: 0.25rem 0;
+}
+
+.pdf-heavy-reason p:first-child {
+  margin-top: 0;
+}
+
+.pdf-heavy-reason p:last-child {
+  margin-bottom: 0;
+}
+
+.pdf-complexity-section--warning {
+  background-color: rgba(255, 165, 0, 0.1);
+  border: 1px solid rgba(255, 165, 0, 0.3);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.pdf-complexity-section--warning .pdf-complexity-section-title {
+  color: #ffa500;
+}
+
+.pdf-type3-explanation {
+  color: #aaa;
+  font-size: 0.8rem;
+  margin: 0.5rem 0 0 0;
+  font-style: italic;
+}
+
+.pdf-complexity-font-item--type3 {
+  border: 1px solid rgba(255, 165, 0, 0.5);
+  background-color: rgba(255, 165, 0, 0.1);
+  position: relative;
+}
+
+.pdf-type3-badge {
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  background-color: #ffa500;
+  color: #1a1a1a;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
 }

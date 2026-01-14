@@ -20,11 +20,341 @@ const ZOOM_STEP = 0.25;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 
+// 重いページの閾値
+const HEAVY_PAGE_THRESHOLD = 10000; // 総描画命令数
+const HEAVY_TEXT_THRESHOLD = 1000; // テキスト描画数の閾値
+const HEAVY_FONT_SWITCH_THRESHOLD = 200; // フォント切り替え数の閾値
+
+// pdf.js のオペレーションコード
+const OPS = pdfjsLib.OPS;
+
+// フォント詳細情報
+interface FontInfo {
+  name: string;
+  type: string;
+  isEmbedded: boolean;
+  isMonospace: boolean;
+  isSerifFont: boolean;
+  isType3: boolean;
+}
+
+// ページの複雑さ情報
+interface PageComplexity {
+  operationCount: number;
+  fontCount: number;
+  imageCount: number;
+  textCount: number;
+  pathCount: number;
+  curveCount: number;
+  fillCount: number;
+  strokeCount: number;
+  clipCount: number;
+  saveRestoreCount: number;
+  transformCount: number;
+  shadingCount: number;
+  dependencyCount: number;
+  uniqueFonts: string[];
+  fontDetails: FontInfo[];
+  // Type3フォント関連
+  hasType3Fonts: boolean;
+  type3FontCount: number;
+  estimatedType3Cost: number; // Type3フォントによる推定描画コスト
+  isHeavy: boolean;
+  heavyReason: string | null; // 重いと判定された理由
+  // デバッグ用：オペレーション種類ごとのカウント
+  opCounts: Record<string, number>;
+  // 解析時間（ミリ秒）
+  analysisTime: number;
+}
+
+// OPSコードから名前を取得するマップを作成
+const opsNameMap: Record<number, string> = {};
+for (const [name, code] of Object.entries(OPS)) {
+  if (typeof code === 'number') {
+    opsNameMap[code] = name;
+  }
+}
+
+// ページの複雑さを事前に判定（Workerで処理されるのでブロックしない）
+async function analyzePageComplexity(
+  page: PDFPageProxy,
+): Promise<PageComplexity> {
+  const startTime = performance.now();
+
+  const operatorList = await page.getOperatorList();
+  const operationCount = operatorList.fnArray.length;
+
+  // オペレーションの種類をカウント
+  let fontCount = 0;
+  let imageCount = 0;
+  let textCount = 0;
+  let pathCount = 0;
+  let curveCount = 0;
+  let fillCount = 0;
+  let strokeCount = 0;
+  let clipCount = 0;
+  let saveRestoreCount = 0;
+  let transformCount = 0;
+  let shadingCount = 0;
+  let dependencyCount = 0;
+  const fontNames = new Set<string>();
+
+  // デバッグ用：全オペレーションをカウント
+  const opCounts: Record<string, number> = {};
+
+  for (let i = 0; i < operatorList.fnArray.length; i++) {
+    const op = operatorList.fnArray[i];
+    const args = operatorList.argsArray[i];
+
+    // デバッグ用：オペレーション名でカウント
+    const opName = opsNameMap[op] || `unknown_${op}`;
+    opCounts[opName] = (opCounts[opName] || 0) + 1;
+
+    switch (op) {
+      // フォント
+      case OPS.setFont:
+        fontCount++;
+        if (args && args[0]) {
+          fontNames.add(String(args[0]));
+        }
+        break;
+      // 画像
+      case OPS.paintImageXObject:
+      case OPS.paintInlineImageXObject:
+      case OPS.paintImageMaskXObject:
+      case OPS.paintJpegXObject:
+        imageCount++;
+        break;
+      // テキスト
+      case OPS.showText:
+      case OPS.showSpacedText:
+        textCount++;
+        break;
+      // パス構築
+      case OPS.moveTo:
+      case OPS.lineTo:
+      case OPS.rectangle:
+      case OPS.constructPath:
+        pathCount++;
+        break;
+      // 曲線
+      case OPS.curveTo:
+      case OPS.curveTo2:
+      case OPS.curveTo3:
+        curveCount++;
+        break;
+      // 塗りつぶし
+      case OPS.fill:
+      case OPS.eoFill:
+      case OPS.fillStroke:
+      case OPS.eoFillStroke:
+        fillCount++;
+        break;
+      // ストローク
+      case OPS.stroke:
+        strokeCount++;
+        break;
+      // クリップ
+      case OPS.clip:
+      case OPS.eoClip:
+        clipCount++;
+        break;
+      // 状態保存/復元
+      case OPS.save:
+      case OPS.restore:
+        saveRestoreCount++;
+        break;
+      // 変換
+      case OPS.transform:
+        transformCount++;
+        break;
+      // シェーディング/グラデーション
+      case OPS.shadingFill:
+        shadingCount++;
+        break;
+      // 依存関係（フォントなど外部リソース）
+      case OPS.dependency:
+        dependencyCount++;
+        break;
+    }
+  }
+
+  // フォントの詳細情報を取得
+  const fontDetails: FontInfo[] = [];
+  let type3FontCount = 0;
+  try {
+    const textContent = await page.getTextContent();
+    const seenFonts = new Set<string>();
+
+    for (const item of textContent.items) {
+      if (
+        'fontName' in item &&
+        item.fontName &&
+        !seenFonts.has(item.fontName)
+      ) {
+        seenFonts.add(item.fontName);
+        // commonObjsからフォント情報を取得を試みる
+        try {
+          const fontObj = await new Promise<{
+            name: string;
+            type: string;
+            isMonospace?: boolean;
+            isSerifFont?: boolean;
+          } | null>((resolve) => {
+            page.commonObjs.get(item.fontName, (font: unknown) => {
+              resolve(font as typeof fontObj);
+            });
+            // タイムアウト
+            setTimeout(() => resolve(null), 100);
+          });
+
+          if (fontObj) {
+            const isType3 =
+              fontObj.type === 'Type3' ||
+              fontObj.name === 'Type3' ||
+              item.fontName.includes('Type3');
+            if (isType3) {
+              type3FontCount++;
+            }
+            fontDetails.push({
+              name: fontObj.name || item.fontName,
+              type: fontObj.type || 'unknown',
+              isEmbedded: item.fontName.startsWith('g_'),
+              isMonospace: fontObj.isMonospace || false,
+              isSerifFont: fontObj.isSerifFont || false,
+              isType3,
+            });
+          } else {
+            // フォント情報が取れない場合、名前でType3をチェック
+            const isType3 = item.fontName.includes('Type3');
+            if (isType3) {
+              type3FontCount++;
+            }
+            fontDetails.push({
+              name: item.fontName,
+              type: 'unknown',
+              isEmbedded: item.fontName.startsWith('g_'),
+              isMonospace: false,
+              isSerifFont: false,
+              isType3,
+            });
+          }
+        } catch {
+          fontDetails.push({
+            name: item.fontName,
+            type: 'error',
+            isEmbedded: item.fontName.startsWith('g_'),
+            isMonospace: false,
+            isSerifFont: false,
+            isType3: false,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('フォント情報取得エラー:', err);
+  }
+
+  const analysisTime = performance.now() - startTime;
+  const hasType3Fonts = type3FontCount > 0;
+
+  // Type3フォントによる推定描画コスト
+  // Type3は各グリフがPDF描画命令で定義されているため、
+  // showText 1回あたり数百〜数千の描画命令が内部的に実行される
+  // 控えめに見積もって、Type3フォントでの showText 1回 = 約100命令相当とする
+  const TYPE3_COST_MULTIPLIER = 100;
+  const estimatedType3Cost = hasType3Fonts
+    ? textCount * TYPE3_COST_MULTIPLIER
+    : 0;
+
+  // 重いページかどうかを判定
+  let isHeavy = false;
+  const heavyReasons: string[] = [];
+
+  // Type3フォント検出
+  if (hasType3Fonts && textCount > 10) {
+    isHeavy = true;
+    heavyReasons.push(
+      `Type3フォント検出 (${type3FontCount}個) - 推定${estimatedType3Cost.toLocaleString()}命令相当`,
+    );
+  }
+
+  // テキスト描画数が多い
+  if (textCount > HEAVY_TEXT_THRESHOLD) {
+    isHeavy = true;
+    heavyReasons.push(
+      `テキスト描画数が多い (${textCount.toLocaleString()} > ${HEAVY_TEXT_THRESHOLD})`,
+    );
+  }
+
+  // フォント切り替えが多い（多いとCanvas状態変更のオーバーヘッドが増える）
+  if (fontCount > HEAVY_FONT_SWITCH_THRESHOLD) {
+    isHeavy = true;
+    heavyReasons.push(
+      `フォント切り替えが多い (${fontCount.toLocaleString()} > ${HEAVY_FONT_SWITCH_THRESHOLD})`,
+    );
+  }
+
+  // 総描画命令数
+  if (operationCount > HEAVY_PAGE_THRESHOLD) {
+    isHeavy = true;
+    heavyReasons.push(
+      `総描画命令数 (${operationCount.toLocaleString()} > ${HEAVY_PAGE_THRESHOLD})`,
+    );
+  }
+
+  const heavyReason = heavyReasons.length > 0 ? heavyReasons.join('\n') : null;
+
+  return {
+    operationCount,
+    fontCount,
+    imageCount,
+    textCount,
+    pathCount,
+    curveCount,
+    fillCount,
+    strokeCount,
+    clipCount,
+    saveRestoreCount,
+    transformCount,
+    shadingCount,
+    dependencyCount,
+    uniqueFonts: Array.from(fontNames),
+    fontDetails,
+    hasType3Fonts,
+    type3FontCount,
+    estimatedType3Cost,
+    isHeavy,
+    heavyReason,
+    opCounts,
+    analysisTime,
+  };
+}
+
 // 検索結果の型
 interface SearchMatch {
   pageNum: number;
   itemIndex: number;
   text: string;
+}
+
+// UIの更新を許可するためのヘルパー関数
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+// BlobをDataURLに変換するヘルパー関数
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 export function PdfViewer() {
@@ -46,14 +376,25 @@ export function PdfViewer() {
   const [pendingPdfData, setPendingPdfData] = useState<ArrayBuffer | null>(
     null,
   );
-  const [showThumbnails, setShowThumbnails] = useState(false);
-  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const [showThumbnails, setShowThumbnails] = useState(true);
+  const [thumbnails, setThumbnails] = useState<
+    (string | { isHeavy: true; reason: string })[]
+  >([]);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+  const [isRendering, setIsRendering] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [heavyPageWarning, setHeavyPageWarning] = useState<{
+    pageNum: number;
+    complexity: PageComplexity;
+  } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const thumbnailPanelRef = useRef<HTMLDivElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const currentRenderTaskRef = useRef<ReturnType<
+    PDFPageProxy['render']
+  > | null>(null);
 
   // テキストレイヤーをレンダリング
   const renderTextLayer = useCallback(
@@ -186,14 +527,48 @@ export function PdfViewer() {
     [],
   );
 
-  // ページをレンダリング
-  const renderPage = useCallback(
-    async (doc: PDFDocumentProxy, pageNum: number, query: string) => {
+  // ページをレンダリング（実際の描画処理）
+  const executeRender = useCallback(
+    async (
+      doc: PDFDocumentProxy,
+      pageNum: number,
+      query: string,
+      forceRender = false,
+    ) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
+      // 前のレンダリングをキャンセル
+      if (currentRenderTaskRef.current) {
+        currentRenderTaskRef.current.cancel();
+        currentRenderTaskRef.current = null;
+      }
+
+      setIsAnalyzing(true);
+      setHeavyPageWarning(null);
+
       try {
         const page = await doc.getPage(pageNum);
+
+        // 事前に複雑さを判定（Workerで処理されるのでブロックしない）
+        if (!forceRender) {
+          const complexity = await analyzePageComplexity(page);
+          if (complexity.isHeavy) {
+            setIsAnalyzing(false);
+            setHeavyPageWarning({
+              pageNum,
+              complexity,
+            });
+            return;
+          }
+        }
+
+        setIsAnalyzing(false);
+        setIsRendering(true);
+
+        // UIの更新を許可（スピナーを表示するため）
+        await yieldToMain();
+
         // 表示用のviewport
         const displayViewport = page.getViewport({ scale, rotation });
 
@@ -215,22 +590,63 @@ export function PdfViewer() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        await page.render({
+        // レンダリングタスクを開始
+        const renderTask = page.render({
           canvasContext: ctx,
-          canvas,
           viewport: renderViewport,
-        }).promise;
+        });
+        currentRenderTaskRef.current = renderTask;
+
+        try {
+          await renderTask.promise;
+        } catch (err) {
+          // キャンセルされた場合はエラーを無視
+          if (
+            err instanceof Error &&
+            err.name === 'RenderingCancelledException'
+          ) {
+            return;
+          }
+          throw err;
+        } finally {
+          currentRenderTaskRef.current = null;
+        }
 
         // テキストレイヤーをレンダリング（表示用のviewportを使用）
         await renderTextLayer(page, displayViewport, query);
       } catch (err) {
+        // キャンセル例外は無視
+        if (
+          err instanceof Error &&
+          err.name === 'RenderingCancelledException'
+        ) {
+          return;
+        }
         setError(
           `ページのレンダリングに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
         );
+      } finally {
+        setIsAnalyzing(false);
+        setIsRendering(false);
       }
     },
     [scale, rotation, renderTextLayer],
   );
+
+  // ページをレンダリング（公開API）
+  const renderPage = useCallback(
+    (doc: PDFDocumentProxy, pageNum: number, query: string) => {
+      executeRender(doc, pageNum, query, false);
+    },
+    [executeRender],
+  );
+
+  // 重いページを強制レンダリング
+  const forceRenderHeavyPage = useCallback(() => {
+    if (!pdfDoc || !heavyPageWarning) return;
+    setHeavyPageWarning(null);
+    executeRender(pdfDoc, heavyPageWarning.pageNum, searchQuery, true);
+  }, [pdfDoc, heavyPageWarning, searchQuery, executeRender]);
 
   // 検索を実行
   const performSearch = useCallback(async () => {
@@ -324,37 +740,77 @@ export function PdfViewer() {
     if (!pdfDoc || !showThumbnails) return;
     if (thumbnails.length === pdfDoc.numPages) return;
 
+    let cancelled = false;
+    // 現在の長さを保存（エフェクト再実行時に続きから始めるため）
+    const startPage = thumbnails.length + 1;
+
     const generateThumbnails = async () => {
       setIsGeneratingThumbnails(true);
-      const thumbs: string[] = [];
       const thumbScale = 0.2;
 
       try {
-        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        for (let pageNum = startPage; pageNum <= pdfDoc.numPages; pageNum++) {
+          if (cancelled) break;
+
+          // UIの更新を許可
+          await yieldToMain();
+
           const page = await pdfDoc.getPage(pageNum);
+
+          // 重いページかどうかを事前にチェック
+          const complexity = await analyzePageComplexity(page);
+          if (complexity.isHeavy) {
+            if (!cancelled) {
+              setThumbnails((prev) => [
+                ...prev,
+                {
+                  isHeavy: true,
+                  reason: complexity.heavyReason || '重いページ',
+                },
+              ]);
+            }
+            continue;
+          }
+
           const viewport = page.getViewport({ scale: thumbScale });
 
-          const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
+          // OffscreenCanvasを使用してレンダリング
+          const offscreen = new OffscreenCanvas(
+            viewport.width,
+            viewport.height,
+          );
+          const offscreenCtx = offscreen.getContext('2d');
+          if (offscreenCtx) {
             await page.render({
-              canvasContext: ctx,
-              canvas,
+              canvasContext: offscreenCtx,
               viewport,
             }).promise;
-            thumbs.push(canvas.toDataURL('image/jpeg', 0.7));
+
+            // OffscreenCanvasからBlobを取得してDataURLに変換
+            const blob = await offscreen.convertToBlob({
+              type: 'image/jpeg',
+              quality: 0.7,
+            });
+            const dataUrl = await blobToDataUrl(blob);
+
+            if (!cancelled) {
+              // 1ページごとにUIを更新（プログレッシブに表示）
+              setThumbnails((prev) => [...prev, dataUrl]);
+            }
           }
         }
-        setThumbnails(thumbs);
       } finally {
-        setIsGeneratingThumbnails(false);
+        if (!cancelled) {
+          setIsGeneratingThumbnails(false);
+        }
       }
     };
 
     generateThumbnails();
+
+    return () => {
+      cancelled = true;
+    };
   }, [pdfDoc, showThumbnails, thumbnails.length]);
 
   // 現在のページのサムネイルをスクロールして表示
@@ -698,19 +1154,28 @@ export function PdfViewer() {
             {showThumbnails && (
               <div className="pdf-thumbnail-panel" ref={thumbnailPanelRef}>
                 {isGeneratingThumbnails && thumbnails.length === 0 && (
-                  <div className="pdf-thumbnail-loading">
-                    サムネイル生成中...
+                  <div className="pdf-thumbnail-spinner">
+                    <div className="pdf-spinner pdf-spinner--small" />
+                    <span>サムネイル生成中...</span>
                   </div>
                 )}
                 {thumbnails.map((thumb, index) => (
                   <button
                     key={index}
                     type="button"
-                    className={`pdf-thumbnail ${currentPage === index + 1 ? 'pdf-thumbnail--active' : ''}`}
+                    className={`pdf-thumbnail ${currentPage === index + 1 ? 'pdf-thumbnail--active' : ''} ${typeof thumb === 'object' ? 'pdf-thumbnail--heavy' : ''}`}
                     onClick={() => setCurrentPage(index + 1)}
                     data-page={index + 1}
+                    title={typeof thumb === 'object' ? thumb.reason : undefined}
                   >
-                    <img src={thumb} alt={`ページ ${index + 1}`} />
+                    {typeof thumb === 'string' ? (
+                      <img src={thumb} alt={`ページ ${index + 1}`} />
+                    ) : (
+                      <div className="pdf-thumbnail-heavy-placeholder">
+                        <span className="pdf-thumbnail-heavy-icon">⚠️</span>
+                        <span className="pdf-thumbnail-heavy-text">重い</span>
+                      </div>
+                    )}
                     <span className="pdf-thumbnail-label">{index + 1}</span>
                   </button>
                 ))}
@@ -718,6 +1183,229 @@ export function PdfViewer() {
             )}
 
             <div className="pdf-page-container">
+              {(isRendering || isAnalyzing) && (
+                <div className="pdf-rendering-overlay">
+                  <div className="pdf-spinner" />
+                  {isAnalyzing && (
+                    <span className="pdf-analyzing-text">解析中...</span>
+                  )}
+                </div>
+              )}
+              {heavyPageWarning && (
+                <div className="pdf-heavy-warning">
+                  <div className="pdf-heavy-warning-content">
+                    <h4>⚠️ ページ解析結果</h4>
+                    {heavyPageWarning.complexity.heavyReason && (
+                      <div className="pdf-heavy-reason">
+                        {heavyPageWarning.complexity.heavyReason
+                          .split('\n')
+                          .map((reason, idx) => (
+                            <p key={idx}>{reason}</p>
+                          ))}
+                      </div>
+                    )}
+                    <div className="pdf-complexity-details">
+                      {heavyPageWarning.complexity.hasType3Fonts && (
+                        <div className="pdf-complexity-section pdf-complexity-section--warning">
+                          <div className="pdf-complexity-section-title">
+                            ⚠️ Type3フォント検出
+                          </div>
+                          <div className="pdf-complexity-row">
+                            <span>Type3フォント数:</span>
+                            <span>
+                              {heavyPageWarning.complexity.type3FontCount}
+                            </span>
+                          </div>
+                          <div className="pdf-complexity-row">
+                            <span>テキスト描画数:</span>
+                            <span>
+                              {heavyPageWarning.complexity.textCount.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="pdf-complexity-row">
+                            <span>推定描画コスト:</span>
+                            <span>
+                              {heavyPageWarning.complexity.estimatedType3Cost.toLocaleString()}
+                              命令相当
+                            </span>
+                          </div>
+                          <p className="pdf-type3-explanation">
+                            Type3フォントは各文字がPDF描画命令で定義されているため、
+                            レンダリングが非常に重くなります。
+                          </p>
+                        </div>
+                      )}
+                      <div className="pdf-complexity-section">
+                        <div className="pdf-complexity-section-title">
+                          基本情報
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>解析時間:</span>
+                          <span>
+                            {heavyPageWarning.complexity.analysisTime.toFixed(
+                              0,
+                            )}
+                            ms
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>総描画命令:</span>
+                          <span>
+                            {heavyPageWarning.complexity.operationCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>依存リソース:</span>
+                          <span>
+                            {heavyPageWarning.complexity.dependencyCount}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pdf-complexity-section">
+                        <div className="pdf-complexity-section-title">
+                          テキスト/フォント
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>テキスト描画:</span>
+                          <span>
+                            {heavyPageWarning.complexity.textCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>フォント設定:</span>
+                          <span>
+                            {heavyPageWarning.complexity.fontCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>ユニークフォント:</span>
+                          <span>
+                            {heavyPageWarning.complexity.uniqueFonts.length}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pdf-complexity-section">
+                        <div className="pdf-complexity-section-title">
+                          グラフィックス
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>画像:</span>
+                          <span>
+                            {heavyPageWarning.complexity.imageCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>パス (線/矩形):</span>
+                          <span>
+                            {heavyPageWarning.complexity.pathCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>曲線:</span>
+                          <span>
+                            {heavyPageWarning.complexity.curveCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>塗りつぶし:</span>
+                          <span>
+                            {heavyPageWarning.complexity.fillCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>ストローク:</span>
+                          <span>
+                            {heavyPageWarning.complexity.strokeCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>シェーディング:</span>
+                          <span>
+                            {heavyPageWarning.complexity.shadingCount.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pdf-complexity-section">
+                        <div className="pdf-complexity-section-title">
+                          状態管理
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>クリップ:</span>
+                          <span>
+                            {heavyPageWarning.complexity.clipCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>状態保存/復元:</span>
+                          <span>
+                            {heavyPageWarning.complexity.saveRestoreCount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pdf-complexity-row">
+                          <span>変換:</span>
+                          <span>
+                            {heavyPageWarning.complexity.transformCount.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      {heavyPageWarning.complexity.fontDetails.length > 0 && (
+                        <div className="pdf-complexity-section">
+                          <div className="pdf-complexity-section-title">
+                            フォント詳細
+                          </div>
+                          {heavyPageWarning.complexity.fontDetails.map(
+                            (font, idx) => (
+                              <div
+                                key={idx}
+                                className={`pdf-complexity-font-item ${font.isType3 ? 'pdf-complexity-font-item--type3' : ''}`}
+                              >
+                                {font.isType3 && (
+                                  <div className="pdf-type3-badge">Type3</div>
+                                )}
+                                <div className="pdf-complexity-row">
+                                  <span>名前:</span>
+                                  <span>{font.name}</span>
+                                </div>
+                                <div className="pdf-complexity-row">
+                                  <span>タイプ:</span>
+                                  <span>{font.type}</span>
+                                </div>
+                                <div className="pdf-complexity-row">
+                                  <span>埋め込み:</span>
+                                  <span>{font.isEmbedded ? 'Yes' : 'No'}</span>
+                                </div>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      )}
+
+                      <div className="pdf-complexity-section">
+                        <div className="pdf-complexity-section-title">
+                          全オペレーション (デバッグ)
+                        </div>
+                        {Object.entries(heavyPageWarning.complexity.opCounts)
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([opName, count]) => (
+                            <div className="pdf-complexity-row" key={opName}>
+                              <span>{opName}:</span>
+                              <span>{count.toLocaleString()}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                    <div className="pdf-heavy-warning-buttons">
+                      <button type="button" onClick={forceRenderHeavyPage}>
+                        レンダリングする
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="pdf-page-wrapper">
                 <canvas ref={canvasRef} className="pdf-page" />
                 <div ref={textLayerRef} className="pdf-text-layer" />
