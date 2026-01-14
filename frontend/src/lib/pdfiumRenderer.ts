@@ -3,6 +3,13 @@ import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium';
 const PDFIUM_WASM_URL =
   'https://cdn.jsdelivr.net/npm/@embedpdf/pdfium/dist/pdfium.wasm';
 
+// Emscripten HEAPU8 型（pdfiumの型定義に含まれていない）
+type PdfiumWithHeap = WrappedPdfiumModule & {
+  pdfium: WrappedPdfiumModule['pdfium'] & {
+    HEAPU8: Uint8Array;
+  };
+};
+
 let pdfiumInstance: WrappedPdfiumModule | null = null;
 let initPromise: Promise<WrappedPdfiumModule> | null = null;
 
@@ -36,7 +43,7 @@ export async function renderPageWithPdfium(
   rotation: number, // 0, 90, 180, 270
   password?: string,
 ): Promise<ImageData> {
-  const pdfium = await initPdfium();
+  const pdfium = (await initPdfium()) as PdfiumWithHeap;
 
   // PDFデータをWASMメモリにコピー
   const dataArray = new Uint8Array(pdfData);

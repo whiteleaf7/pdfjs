@@ -126,7 +126,6 @@ async function analyzePageComplexity(
       case OPS.paintImageXObject:
       case OPS.paintInlineImageXObject:
       case OPS.paintImageMaskXObject:
-      case OPS.paintJpegXObject:
         imageCount++;
         break;
       // テキスト
@@ -640,6 +639,7 @@ export function PdfViewer() {
         const renderTask = page.render({
           canvasContext: ctx,
           viewport: renderViewport,
+          canvas,
         });
         currentRenderTaskRef.current = renderTask;
 
@@ -852,8 +852,10 @@ export function PdfViewer() {
           const offscreenCtx = offscreen.getContext('2d');
           if (offscreenCtx) {
             await page.render({
-              canvasContext: offscreenCtx,
+              canvasContext:
+                offscreenCtx as unknown as CanvasRenderingContext2D,
               viewport,
+              canvas: offscreen as unknown as HTMLCanvasElement,
             }).promise;
 
             // OffscreenCanvasからBlobを取得してDataURLに変換
