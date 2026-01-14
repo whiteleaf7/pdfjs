@@ -329,7 +329,7 @@ export function PdfViewer() {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scale, setScale] = useState(0.5);
+  const [scale, setScale] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -549,9 +549,14 @@ export function PdfViewer() {
               ctx.putImageData(imageData, 0, 0);
             }
 
-            textLayer.innerHTML = '';
-            textLayer.style.width = `${imageData.width / outputScale}px`;
-            textLayer.style.height = `${imageData.height / outputScale}px`;
+            // PDFiumでもテキストレイヤーを追加（検索ハイライト用）
+            const displayViewport = page.getViewport({ scale, rotation });
+            await renderTextLayerToElement(
+              page,
+              displayViewport,
+              searchQuery,
+              textLayer,
+            );
 
             usedPdfium = true;
           } catch (err) {
@@ -662,6 +667,35 @@ export function PdfViewer() {
     // レンダリング状態をリセット
     setPageRenderStates(new Map());
   }, [pdfDoc, scale, rotation]);
+
+  // 検索クエリが変更されたらテキストレイヤーを更新
+  useEffect(() => {
+    if (!pdfDoc) return;
+
+    const updateTextLayers = async () => {
+      for (const [pageNum, state] of pageRenderStates.entries()) {
+        if (!state.rendered) continue;
+
+        const pageContainer = pageRefsMap.current.get(pageNum);
+        if (!pageContainer) continue;
+
+        const textLayer = pageContainer.querySelector(
+          '.pdf-text-layer',
+        ) as HTMLDivElement;
+        if (!textLayer) continue;
+
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale, rotation });
+          await renderTextLayerToElement(page, viewport, searchQuery, textLayer);
+        } catch (err) {
+          console.warn(`テキストレイヤー更新エラー (ページ${pageNum}):`, err);
+        }
+      }
+    };
+
+    updateTextLayers();
+  }, [pdfDoc, searchQuery, scale, rotation, pageRenderStates, renderTextLayerToElement]);
 
   // スクロール位置から現在のページを検出
   useEffect(() => {

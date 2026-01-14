@@ -334,7 +334,6 @@
   top: 0;
   left: 0;
   overflow: hidden;
-  opacity: 0.3;
   pointer-events: none;
 }
 
@@ -347,13 +346,15 @@
 
 /* 検索ハイライト */
 .pdf-text-layer .pdf-search-highlight {
-  background-color: rgba(250, 204, 21, 0.8);
+  background-color: rgba(250, 204, 21, 0.9);
   color: transparent;
   border-radius: 2px;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.2);
 }
 
 .pdf-text-layer .pdf-search-current {
-  background-color: rgba(251, 146, 60, 0.9);
+  background-color: rgba(251, 146, 60, 1);
+  box-shadow: 0 0 4px rgba(251, 146, 60, 0.5);
 }
 
 /* パスワードダイアログ */
