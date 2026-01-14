@@ -25,9 +25,9 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 
 // 重いページの閾値
-const HEAVY_PAGE_THRESHOLD = 10000; // 総描画命令数
-const HEAVY_TEXT_THRESHOLD = 1000; // テキスト描画数の閾値
-const HEAVY_FONT_SWITCH_THRESHOLD = 200; // フォント切り替え数の閾値
+const HEAVY_PAGE_THRESHOLD = 10000;
+const HEAVY_TEXT_THRESHOLD = 1000;
+const HEAVY_FONT_SWITCH_THRESHOLD = 200;
 
 // pdf.js のオペレーションコード
 const OPS = pdfjsLib.OPS;
@@ -59,16 +59,20 @@ interface PageComplexity {
   dependencyCount: number;
   uniqueFonts: string[];
   fontDetails: FontInfo[];
-  // Type3フォント関連
   hasType3Fonts: boolean;
   type3FontCount: number;
-  estimatedType3Cost: number; // Type3フォントによる推定描画コスト
+  estimatedType3Cost: number;
   isHeavy: boolean;
-  heavyReason: string | null; // 重いと判定された理由
-  // デバッグ用：オペレーション種類ごとのカウント
+  heavyReason: string | null;
   opCounts: Record<string, number>;
-  // 解析時間（ミリ秒）
   analysisTime: number;
+}
+
+// ページのレンダリング状態
+interface PageRenderState {
+  rendered: boolean;
+  rendering: boolean;
+  usedPdfium: boolean;
 }
 
 // OPSコードから名前を取得するマップを作成
@@ -79,16 +83,14 @@ for (const [name, code] of Object.entries(OPS)) {
   }
 }
 
-// ページの複雑さを事前に判定（Workerで処理されるのでブロックしない）
+// ページの複雑さを事前に判定
 async function analyzePageComplexity(
   page: PDFPageProxy,
 ): Promise<PageComplexity> {
   const startTime = performance.now();
-
   const operatorList = await page.getOperatorList();
   const operationCount = operatorList.fnArray.length;
 
-  // オペレーションの種類をカウント
   let fontCount = 0;
   let imageCount = 0;
   let textCount = 0;
@@ -102,87 +104,68 @@ async function analyzePageComplexity(
   let shadingCount = 0;
   let dependencyCount = 0;
   const fontNames = new Set<string>();
-
-  // デバッグ用：全オペレーションをカウント
   const opCounts: Record<string, number> = {};
 
   for (let i = 0; i < operatorList.fnArray.length; i++) {
     const op = operatorList.fnArray[i];
     const args = operatorList.argsArray[i];
-
-    // デバッグ用：オペレーション名でカウント
     const opName = opsNameMap[op] || `unknown_${op}`;
     opCounts[opName] = (opCounts[opName] || 0) + 1;
 
     switch (op) {
-      // フォント
       case OPS.setFont:
         fontCount++;
-        if (args && args[0]) {
-          fontNames.add(String(args[0]));
-        }
+        if (args && args[0]) fontNames.add(String(args[0]));
         break;
-      // 画像
       case OPS.paintImageXObject:
       case OPS.paintInlineImageXObject:
       case OPS.paintImageMaskXObject:
         imageCount++;
         break;
-      // テキスト
       case OPS.showText:
       case OPS.showSpacedText:
         textCount++;
         break;
-      // パス構築
       case OPS.moveTo:
       case OPS.lineTo:
       case OPS.rectangle:
       case OPS.constructPath:
         pathCount++;
         break;
-      // 曲線
       case OPS.curveTo:
       case OPS.curveTo2:
       case OPS.curveTo3:
         curveCount++;
         break;
-      // 塗りつぶし
       case OPS.fill:
       case OPS.eoFill:
       case OPS.fillStroke:
       case OPS.eoFillStroke:
         fillCount++;
         break;
-      // ストローク
       case OPS.stroke:
         strokeCount++;
         break;
-      // クリップ
       case OPS.clip:
       case OPS.eoClip:
         clipCount++;
         break;
-      // 状態保存/復元
       case OPS.save:
       case OPS.restore:
         saveRestoreCount++;
         break;
-      // 変換
       case OPS.transform:
         transformCount++;
         break;
-      // シェーディング/グラデーション
       case OPS.shadingFill:
         shadingCount++;
         break;
-      // 依存関係（フォントなど外部リソース）
       case OPS.dependency:
         dependencyCount++;
         break;
     }
   }
 
-  // フォントの詳細情報を取得
   const fontDetails: FontInfo[] = [];
   let type3FontCount = 0;
   try {
@@ -196,7 +179,6 @@ async function analyzePageComplexity(
         !seenFonts.has(item.fontName)
       ) {
         seenFonts.add(item.fontName);
-        // commonObjsからフォント情報を取得を試みる
         try {
           const fontObj = await new Promise<{
             name: string;
@@ -207,7 +189,6 @@ async function analyzePageComplexity(
             page.commonObjs.get(item.fontName, (font: unknown) => {
               resolve(font as typeof fontObj);
             });
-            // タイムアウト
             setTimeout(() => resolve(null), 100);
           });
 
@@ -216,9 +197,7 @@ async function analyzePageComplexity(
               fontObj.type === 'Type3' ||
               fontObj.name === 'Type3' ||
               item.fontName.includes('Type3');
-            if (isType3) {
-              type3FontCount++;
-            }
+            if (isType3) type3FontCount++;
             fontDetails.push({
               name: fontObj.name || item.fontName,
               type: fontObj.type || 'unknown',
@@ -228,11 +207,8 @@ async function analyzePageComplexity(
               isType3,
             });
           } else {
-            // フォント情報が取れない場合、名前でType3をチェック
             const isType3 = item.fontName.includes('Type3');
-            if (isType3) {
-              type3FontCount++;
-            }
+            if (isType3) type3FontCount++;
             fontDetails.push({
               name: item.fontName,
               type: 'unknown',
@@ -260,45 +236,32 @@ async function analyzePageComplexity(
 
   const analysisTime = performance.now() - startTime;
   const hasType3Fonts = type3FontCount > 0;
-
-  // Type3フォントによる推定描画コスト
-  // Type3は各グリフがPDF描画命令で定義されているため、
-  // showText 1回あたり数百〜数千の描画命令が内部的に実行される
-  // 控えめに見積もって、Type3フォントでの showText 1回 = 約100命令相当とする
   const TYPE3_COST_MULTIPLIER = 100;
   const estimatedType3Cost = hasType3Fonts
     ? textCount * TYPE3_COST_MULTIPLIER
     : 0;
 
-  // 重いページかどうかを判定
   let isHeavy = false;
   const heavyReasons: string[] = [];
 
-  // Type3フォント検出
   if (hasType3Fonts && textCount > 10) {
     isHeavy = true;
     heavyReasons.push(
       `Type3フォント検出 (${type3FontCount}個) - 推定${estimatedType3Cost.toLocaleString()}命令相当`,
     );
   }
-
-  // テキスト描画数が多い
   if (textCount > HEAVY_TEXT_THRESHOLD) {
     isHeavy = true;
     heavyReasons.push(
       `テキスト描画数が多い (${textCount.toLocaleString()} > ${HEAVY_TEXT_THRESHOLD})`,
     );
   }
-
-  // フォント切り替えが多い（多いとCanvas状態変更のオーバーヘッドが増える）
   if (fontCount > HEAVY_FONT_SWITCH_THRESHOLD) {
     isHeavy = true;
     heavyReasons.push(
       `フォント切り替えが多い (${fontCount.toLocaleString()} > ${HEAVY_FONT_SWITCH_THRESHOLD})`,
     );
   }
-
-  // 総描画命令数
   if (operationCount > HEAVY_PAGE_THRESHOLD) {
     isHeavy = true;
     heavyReasons.push(
@@ -366,7 +329,7 @@ export function PdfViewer() {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(0.5);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -379,7 +342,6 @@ export function PdfViewer() {
   const [pendingPdfData, setPendingPdfData] = useState<ArrayBuffer | null>(
     null,
   );
-  // PDFium用：元のPDFデータとパスワードを保持
   const [pdfArrayBuffer, setPdfArrayBuffer] = useState<ArrayBuffer | null>(
     null,
   );
@@ -391,31 +353,42 @@ export function PdfViewer() {
     (string | { isHeavy: true; reason: string })[]
   >([]);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
-  const [isRendering, setIsRendering] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // ページごとのレンダリング状態
+  const [pageRenderStates, setPageRenderStates] = useState<
+    Map<number, PageRenderState>
+  >(new Map());
+
   const thumbnailPanelRef = useRef<HTMLDivElement>(null);
-  const textLayerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
-  const currentRenderTaskRef = useRef<ReturnType<
-    PDFPageProxy['render']
-  > | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageRefsMap = useRef<Map<number, HTMLDivElement>>(new Map());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  // ページの参照を設定
+  const setPageRef = useCallback(
+    (pageNum: number, element: HTMLDivElement | null) => {
+      if (element) {
+        pageRefsMap.current.set(pageNum, element);
+      } else {
+        pageRefsMap.current.delete(pageNum);
+      }
+    },
+    [],
+  );
 
   // テキストレイヤーをレンダリング
-  const renderTextLayer = useCallback(
+  const renderTextLayerToElement = useCallback(
     async (
       page: PDFPageProxy,
       viewport: pdfjsLib.PageViewport,
       query: string,
+      textLayerElement: HTMLDivElement,
     ) => {
-      const textLayer = textLayerRef.current;
-      if (!textLayer) return;
-
-      // 既存のテキストレイヤーをクリア
-      textLayer.innerHTML = '';
-      textLayer.style.width = `${viewport.width}px`;
-      textLayer.style.height = `${viewport.height}px`;
+      textLayerElement.innerHTML = '';
+      textLayerElement.style.width = `${viewport.width}px`;
+      textLayerElement.style.height = `${viewport.height}px`;
 
       const textContent = await page.getTextContent();
       const lowerQuery = query.toLowerCase();
@@ -429,26 +402,17 @@ export function PdfViewer() {
           viewport.transform,
           textItem.transform,
         );
-
-        // フォントサイズを計算（回転を考慮）
         const fontHeight = Math.hypot(tx[0], tx[1]);
         const fontWidth = Math.hypot(tx[2], tx[3]);
         const fontSize = Math.min(fontHeight, fontWidth);
-
-        // 回転角度を計算（ラジアン→度）
         const angle = Math.atan2(tx[1], tx[0]) * (180 / Math.PI);
-
-        // 1文字あたりの幅を推定
         const charWidth = textItem.width
           ? (textItem.width * viewport.scale) / textItem.str.length
           : fontSize * 0.6;
-
-        // ベースライン（テキスト下端）からフォントサイズ分を回転方向に合わせて調整
         const angleRad = (angle * Math.PI) / 180;
         const baseLeft = tx[4] + fontSize * Math.sin(angleRad);
         const baseTop = tx[5] - fontSize * Math.cos(angleRad);
 
-        // span要素を作成するヘルパー関数
         const createSpan = (
           content: string,
           left: number,
@@ -464,13 +428,10 @@ export function PdfViewer() {
           span.style.fontFamily = textItem.fontName || 'sans-serif';
           span.style.transformOrigin = 'left top';
           span.style.transform = `rotate(${angle}deg)`;
-          if (highlight) {
-            span.classList.add('pdf-search-highlight');
-          }
+          if (highlight) span.classList.add('pdf-search-highlight');
           return span;
         };
 
-        // 検索クエリがある場合、マッチ部分を分割してハイライト
         if (lowerQuery && textItem.str.toLowerCase().includes(lowerQuery)) {
           const text = textItem.str;
           const lowerText = text.toLowerCase();
@@ -481,26 +442,23 @@ export function PdfViewer() {
           while (
             (matchIndex = lowerText.indexOf(lowerQuery, lastIndex)) !== -1
           ) {
-            // マッチ前のテキスト
             if (matchIndex > lastIndex) {
               const beforeText = text.slice(lastIndex, matchIndex);
               const offsetX =
                 offset * charWidth * Math.cos((angle * Math.PI) / 180);
               const offsetY =
                 offset * charWidth * Math.sin((angle * Math.PI) / 180);
-              textLayer.appendChild(
+              textLayerElement.appendChild(
                 createSpan(beforeText, baseLeft + offsetX, baseTop + offsetY),
               );
               offset += beforeText.length;
             }
-
-            // マッチ部分（ハイライト）
             const matchText = text.slice(matchIndex, matchIndex + query.length);
             const offsetX =
               offset * charWidth * Math.cos((angle * Math.PI) / 180);
             const offsetY =
               offset * charWidth * Math.sin((angle * Math.PI) / 180);
-            textLayer.appendChild(
+            textLayerElement.appendChild(
               createSpan(
                 matchText,
                 baseLeft + offsetX,
@@ -509,189 +467,239 @@ export function PdfViewer() {
               ),
             );
             offset += matchText.length;
-
             lastIndex = matchIndex + query.length;
           }
-
-          // 残りのテキスト
           if (lastIndex < text.length) {
             const afterText = text.slice(lastIndex);
             const offsetX =
               offset * charWidth * Math.cos((angle * Math.PI) / 180);
             const offsetY =
               offset * charWidth * Math.sin((angle * Math.PI) / 180);
-            textLayer.appendChild(
+            textLayerElement.appendChild(
               createSpan(afterText, baseLeft + offsetX, baseTop + offsetY),
             );
           }
         } else {
-          // 検索クエリがない、またはマッチしない場合は通常のレンダリング
-          textLayer.appendChild(createSpan(textItem.str, baseLeft, baseTop));
+          textLayerElement.appendChild(
+            createSpan(textItem.str, baseLeft, baseTop),
+          );
         }
       }
     },
     [],
   );
 
-  // PDFiumでページをレンダリング（内部用）
-  const renderWithPdfiumInternal = useCallback(
+  // 単一ページをレンダリング
+  const renderSinglePage = useCallback(
     async (pageNum: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas || !pdfArrayBuffer) return false;
+      if (!pdfDoc || !pdfArrayBuffer) return;
+
+      const pageContainer = pageRefsMap.current.get(pageNum);
+      if (!pageContainer) return;
+
+      // 既にレンダリング中または完了している場合はスキップ
+      const currentState = pageRenderStates.get(pageNum);
+      if (currentState?.rendered || currentState?.rendering) return;
+
+      // レンダリング中フラグを設定
+      setPageRenderStates((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(pageNum, {
+          rendered: false,
+          rendering: true,
+          usedPdfium: false,
+        });
+        return newMap;
+      });
 
       try {
-        const outputScale = window.devicePixelRatio || 1;
-        const renderScale = scale * outputScale;
-
-        const imageData = await renderPageWithPdfium(
-          pdfArrayBuffer.slice(0),
-          pageNum,
-          renderScale,
-          rotation,
-          currentPassword,
-        );
-
-        canvas.width = imageData.width;
-        canvas.height = imageData.height;
-        canvas.style.width = `${imageData.width / outputScale}px`;
-        canvas.style.height = `${imageData.height / outputScale}px`;
-
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.putImageData(imageData, 0, 0);
-        }
-
-        // テキストレイヤーはクリア
-        const textLayer = textLayerRef.current;
-        if (textLayer) {
-          textLayer.innerHTML = '';
-          textLayer.style.width = `${imageData.width / outputScale}px`;
-          textLayer.style.height = `${imageData.height / outputScale}px`;
-        }
-
-        return true;
-      } catch (err) {
-        console.warn('PDFiumレンダリング失敗:', err);
-        return false;
-      }
-    },
-    [pdfArrayBuffer, scale, rotation, currentPassword],
-  );
-
-  // ページをレンダリング（実際の描画処理）
-  const executeRender = useCallback(
-    async (doc: PDFDocumentProxy, pageNum: number, query: string) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      // 前のレンダリングをキャンセル
-      if (currentRenderTaskRef.current) {
-        currentRenderTaskRef.current.cancel();
-        currentRenderTaskRef.current = null;
-      }
-
-      setIsAnalyzing(true);
-
-      try {
-        const page = await doc.getPage(pageNum);
-
-        // 事前に複雑さを判定（Workerで処理されるのでブロックしない）
+        const page = await pdfDoc.getPage(pageNum);
         const complexity = await analyzePageComplexity(page);
 
-        setIsAnalyzing(false);
-        setIsRendering(true);
-
-        // UIの更新を許可（スピナーを表示するため）
         await yieldToMain();
 
-        // 重いページの場合はPDFiumで自動レンダリング
-        if (complexity.isHeavy && pdfArrayBuffer) {
-          const success = await renderWithPdfiumInternal(pageNum);
-          if (success) {
-            return;
-          }
-          // PDFiumが失敗した場合はpdf.jsにフォールバック
-          console.warn('PDFiumが失敗、pdf.jsにフォールバック');
-        }
+        const canvas = pageContainer.querySelector('canvas');
+        const textLayer = pageContainer.querySelector(
+          '.pdf-text-layer',
+        ) as HTMLDivElement;
+        if (!canvas || !textLayer) return;
 
-        // 表示用のviewport
-        const displayViewport = page.getViewport({ scale, rotation });
-
-        // 高解像度レンダリング用のスケール（デバイスピクセル比を考慮）
         const outputScale = window.devicePixelRatio || 1;
-        const renderViewport = page.getViewport({
-          scale: scale * outputScale,
-          rotation,
-        });
+        let usedPdfium = false;
 
-        // キャンバスの実際のピクセルサイズ（高解像度）
-        canvas.width = renderViewport.width;
-        canvas.height = renderViewport.height;
+        // 重いページはPDFiumを使用
+        if (complexity.isHeavy) {
+          try {
+            const renderScale = scale * outputScale;
+            const imageData = await renderPageWithPdfium(
+              pdfArrayBuffer.slice(0),
+              pageNum,
+              renderScale,
+              rotation,
+              currentPassword,
+            );
 
-        // CSSでの表示サイズ（論理サイズ）
-        canvas.style.width = `${displayViewport.width}px`;
-        canvas.style.height = `${displayViewport.height}px`;
+            canvas.width = imageData.width;
+            canvas.height = imageData.height;
+            canvas.style.width = `${imageData.width / outputScale}px`;
+            canvas.style.height = `${imageData.height / outputScale}px`;
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.putImageData(imageData, 0, 0);
+            }
 
-        // レンダリングタスクを開始
-        const renderTask = page.render({
-          canvasContext: ctx,
-          viewport: renderViewport,
-          canvas,
-        });
-        currentRenderTaskRef.current = renderTask;
+            textLayer.innerHTML = '';
+            textLayer.style.width = `${imageData.width / outputScale}px`;
+            textLayer.style.height = `${imageData.height / outputScale}px`;
 
-        try {
-          await renderTask.promise;
-        } catch (err) {
-          // キャンセルされた場合はエラーを無視
-          if (
-            err instanceof Error &&
-            err.name === 'RenderingCancelledException'
-          ) {
-            return;
+            usedPdfium = true;
+          } catch (err) {
+            console.warn(`PDFiumレンダリング失敗 (ページ${pageNum}):`, err);
+            // pdf.jsにフォールバック
           }
-          throw err;
-        } finally {
-          currentRenderTaskRef.current = null;
         }
 
-        // テキストレイヤーをレンダリング（表示用のviewportを使用）
-        await renderTextLayer(page, displayViewport, query);
-      } catch (err) {
-        // キャンセル例外は無視
-        if (
-          err instanceof Error &&
-          err.name === 'RenderingCancelledException'
-        ) {
-          return;
+        // pdf.jsでレンダリング
+        if (!usedPdfium) {
+          const displayViewport = page.getViewport({ scale, rotation });
+          const renderViewport = page.getViewport({
+            scale: scale * outputScale,
+            rotation,
+          });
+
+          canvas.width = renderViewport.width;
+          canvas.height = renderViewport.height;
+          canvas.style.width = `${displayViewport.width}px`;
+          canvas.style.height = `${displayViewport.height}px`;
+
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            await page.render({
+              canvasContext: ctx,
+              viewport: renderViewport,
+              canvas,
+            }).promise;
+          }
+
+          await renderTextLayerToElement(
+            page,
+            displayViewport,
+            searchQuery,
+            textLayer,
+          );
         }
-        setError(
-          `ページのレンダリングに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      } finally {
-        setIsAnalyzing(false);
-        setIsRendering(false);
+
+        // レンダリング完了
+        setPageRenderStates((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(pageNum, { rendered: true, rendering: false, usedPdfium });
+          return newMap;
+        });
+      } catch (err) {
+        console.error(`ページ${pageNum}のレンダリングエラー:`, err);
+        setPageRenderStates((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(pageNum, {
+            rendered: false,
+            rendering: false,
+            usedPdfium: false,
+          });
+          return newMap;
+        });
       }
     },
     [
+      pdfDoc,
+      pdfArrayBuffer,
       scale,
       rotation,
-      renderTextLayer,
-      pdfArrayBuffer,
-      renderWithPdfiumInternal,
+      currentPassword,
+      searchQuery,
+      pageRenderStates,
+      renderTextLayerToElement,
     ],
   );
 
-  // ページをレンダリング（公開API）
-  const renderPage = useCallback(
-    (doc: PDFDocumentProxy, pageNum: number, query: string) => {
-      executeRender(doc, pageNum, query);
-    },
-    [executeRender],
-  );
+  // IntersectionObserverのセットアップ
+  useEffect(() => {
+    if (!pdfDoc) return;
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const pageNum = parseInt(
+              entry.target.getAttribute('data-page') || '0',
+              10,
+            );
+            if (pageNum > 0) {
+              renderSinglePage(pageNum);
+            }
+          }
+        });
+      },
+      {
+        root: scrollContainerRef.current,
+        rootMargin: '200px 0px',
+        threshold: 0,
+      },
+    );
+
+    // 既存のページ要素を監視
+    pageRefsMap.current.forEach((element) => {
+      observerRef.current?.observe(element);
+    });
+
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, [pdfDoc, renderSinglePage]);
+
+  // スケールや回転が変更されたら全ページを再レンダリング
+  useEffect(() => {
+    if (!pdfDoc) return;
+    // レンダリング状態をリセット
+    setPageRenderStates(new Map());
+  }, [pdfDoc, scale, rotation]);
+
+  // スクロール位置から現在のページを検出
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !pdfDoc) return;
+
+    const handleScroll = () => {
+      const containerRect = container.getBoundingClientRect();
+      const containerCenter = containerRect.top + containerRect.height / 2;
+
+      let closestPage = 1;
+      let closestDistance = Infinity;
+
+      pageRefsMap.current.forEach((element, pageNum) => {
+        const rect = element.getBoundingClientRect();
+        const pageCenter = rect.top + rect.height / 2;
+        const distance = Math.abs(pageCenter - containerCenter);
+
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestPage = pageNum;
+        }
+      });
+
+      setCurrentPage(closestPage);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [pdfDoc]);
+
+  // ページにスクロール
+  const scrollToPage = useCallback((pageNum: number) => {
+    const pageElement = pageRefsMap.current.get(pageNum);
+    if (pageElement && scrollContainerRef.current) {
+      pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
 
   // 検索を実行
   const performSearch = useCallback(async () => {
@@ -727,21 +735,20 @@ export function PdfViewer() {
       setSearchResults(results);
       setCurrentMatchIndex(results.length > 0 ? 0 : -1);
 
-      // 最初の結果のページに移動
       if (results.length > 0) {
-        setCurrentPage(results[0].pageNum);
+        scrollToPage(results[0].pageNum);
       }
     } finally {
       setIsSearching(false);
     }
-  }, [pdfDoc, searchQuery]);
+  }, [pdfDoc, searchQuery, scrollToPage]);
 
   // 次の検索結果に移動
   const goToNextMatch = () => {
     if (searchResults.length === 0) return;
     const nextIndex = (currentMatchIndex + 1) % searchResults.length;
     setCurrentMatchIndex(nextIndex);
-    setCurrentPage(searchResults[nextIndex].pageNum);
+    scrollToPage(searchResults[nextIndex].pageNum);
   };
 
   // 前の検索結果に移動
@@ -750,7 +757,7 @@ export function PdfViewer() {
     const prevIndex =
       (currentMatchIndex - 1 + searchResults.length) % searchResults.length;
     setCurrentMatchIndex(prevIndex);
-    setCurrentPage(searchResults[prevIndex].pageNum);
+    scrollToPage(searchResults[prevIndex].pageNum);
   };
 
   // 検索クエリが変更されたら検索を実行
@@ -760,13 +767,6 @@ export function PdfViewer() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, performSearch]);
-
-  // ページが変更されたら、または検索クエリが変更されたらレンダリング
-  useEffect(() => {
-    if (pdfDoc && currentPage > 0) {
-      renderPage(pdfDoc, currentPage, searchQuery);
-    }
-  }, [pdfDoc, currentPage, renderPage, searchQuery]);
 
   // 全画面状態の監視
   useEffect(() => {
@@ -786,9 +786,7 @@ export function PdfViewer() {
     if (thumbnails.length === pdfDoc.numPages) return;
 
     let cancelled = false;
-    // 現在の長さを保存（エフェクト再実行時に続きから始めるため）
     const startPage = thumbnails.length + 1;
-    // PDFium用にArrayBufferをキャプチャ
     const pdfDataForPdfium = pdfArrayBuffer;
     const passwordForPdfium = currentPassword;
 
@@ -799,16 +797,12 @@ export function PdfViewer() {
       try {
         for (let pageNum = startPage; pageNum <= pdfDoc.numPages; pageNum++) {
           if (cancelled) break;
-
-          // UIの更新を許可
           await yieldToMain();
 
           const page = await pdfDoc.getPage(pageNum);
-
-          // 重いページかどうかを事前にチェック
           const complexity = await analyzePageComplexity(page);
+
           if (complexity.isHeavy) {
-            // 重いページはPDFiumでレンダリングを試みる
             if (pdfDataForPdfium) {
               try {
                 const dataUrl = await renderThumbnailWithPdfium(
@@ -826,10 +820,8 @@ export function PdfViewer() {
                   `PDFiumサムネイル生成失敗 (ページ${pageNum}):`,
                   err,
                 );
-                // PDFiumが失敗した場合はプレースホルダーを表示
               }
             }
-            // PDFiumが使えない/失敗した場合はプレースホルダー
             if (!cancelled) {
               setThumbnails((prev) => [
                 ...prev,
@@ -843,8 +835,6 @@ export function PdfViewer() {
           }
 
           const viewport = page.getViewport({ scale: thumbScale });
-
-          // OffscreenCanvasを使用してレンダリング
           const offscreen = new OffscreenCanvas(
             viewport.width,
             viewport.height,
@@ -858,7 +848,6 @@ export function PdfViewer() {
               canvas: offscreen as unknown as HTMLCanvasElement,
             }).promise;
 
-            // OffscreenCanvasからBlobを取得してDataURLに変換
             const blob = await offscreen.convertToBlob({
               type: 'image/jpeg',
               quality: 0.7,
@@ -866,7 +855,6 @@ export function PdfViewer() {
             const dataUrl = await blobToDataUrl(blob);
 
             if (!cancelled) {
-              // 1ページごとにUIを更新（プログレッシブに表示）
               setThumbnails((prev) => [...prev, dataUrl]);
             }
           }
@@ -908,7 +896,6 @@ export function PdfViewer() {
       setLoading(true);
       setError(null);
 
-      // ArrayBufferはpdf.jsに渡すとdetachされるのでコピーを使用
       const dataCopy = data.slice(0);
 
       try {
@@ -927,16 +914,15 @@ export function PdfViewer() {
         setPassword('');
         setPasswordError(null);
         setPendingPdfData(null);
-        // PDFium用にデータとパスワードを保持
         setPdfArrayBuffer(data);
         setCurrentPassword(inputPassword);
+        setPageRenderStates(new Map());
       } catch (err) {
         if (
           err instanceof Error &&
           'code' in err &&
           (err as { code: number }).code === PasswordResponses.NEED_PASSWORD
         ) {
-          // パスワードが必要（元のdataを保存、まだdetachされていない）
           setPendingPdfData(data);
           setShowPasswordDialog(true);
           setPasswordError(null);
@@ -946,7 +932,6 @@ export function PdfViewer() {
           (err as { code: number }).code ===
             PasswordResponses.INCORRECT_PASSWORD
         ) {
-          // パスワードが間違っている
           setPasswordError('パスワードが正しくありません');
         } else {
           setError(
@@ -977,6 +962,7 @@ export function PdfViewer() {
       setThumbnails([]);
       setPdfArrayBuffer(null);
       setCurrentPassword(undefined);
+      setPageRenderStates(new Map());
 
       const arrayBuffer = await file.arrayBuffer();
       await loadPdfWithPassword(arrayBuffer);
@@ -1088,6 +1074,9 @@ export function PdfViewer() {
     }
   };
 
+  // ページ配列を生成
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+
   return (
     <div
       ref={viewerRef}
@@ -1145,24 +1134,10 @@ export function PdfViewer() {
       {pdfDoc && (
         <>
           <div className="pdf-toolbar">
-            <div className="pdf-navigation">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                ← 前
-              </button>
+            <div className="pdf-page-indicator">
               <span>
                 {currentPage} / {totalPages}
               </span>
-              <button
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-              >
-                次 →
-              </button>
             </div>
 
             <div className="pdf-zoom-controls">
@@ -1247,7 +1222,7 @@ export function PdfViewer() {
                     key={index}
                     type="button"
                     className={`pdf-thumbnail ${currentPage === index + 1 ? 'pdf-thumbnail--active' : ''} ${typeof thumb === 'object' ? 'pdf-thumbnail--heavy' : ''}`}
-                    onClick={() => setCurrentPage(index + 1)}
+                    onClick={() => scrollToPage(index + 1)}
                     data-page={index + 1}
                     title={typeof thumb === 'object' ? thumb.reason : undefined}
                   >
@@ -1265,19 +1240,29 @@ export function PdfViewer() {
               </div>
             )}
 
-            <div className="pdf-page-container">
-              {(isRendering || isAnalyzing) && (
-                <div className="pdf-rendering-overlay">
-                  <div className="pdf-spinner" />
-                  {isAnalyzing && (
-                    <span className="pdf-analyzing-text">解析中...</span>
-                  )}
-                </div>
-              )}
-              <div className="pdf-page-wrapper">
-                <canvas ref={canvasRef} className="pdf-page" />
-                <div ref={textLayerRef} className="pdf-text-layer" />
-              </div>
+            <div className="pdf-scroll-container" ref={scrollContainerRef}>
+              {pageNumbers.map((pageNum) => {
+                const renderState = pageRenderStates.get(pageNum);
+                return (
+                  <div
+                    key={pageNum}
+                    ref={(el) => setPageRef(pageNum, el)}
+                    className="pdf-page-item"
+                    data-page={pageNum}
+                  >
+                    <div className="pdf-page-wrapper">
+                      {renderState?.rendering && (
+                        <div className="pdf-page-loading">
+                          <div className="pdf-spinner pdf-spinner--small" />
+                        </div>
+                      )}
+                      <canvas className="pdf-page" />
+                      <div className="pdf-text-layer" />
+                    </div>
+                    <div className="pdf-page-number">ページ {pageNum}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>
