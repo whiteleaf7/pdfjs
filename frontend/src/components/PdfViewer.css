@@ -581,6 +581,14 @@
   background-color: #535bf2;
 }
 
+.pdf-heavy-warning-buttons .pdf-button-primary {
+  background-color: #22c55e;
+}
+
+.pdf-heavy-warning-buttons .pdf-button-primary:hover {
+  background-color: #16a34a;
+}
+
 /* 複雑さの詳細情報 */
 .pdf-complexity-details {
   background-color: #1a1a1a;

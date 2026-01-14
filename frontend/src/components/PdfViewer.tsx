@@ -3,6 +3,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { PasswordResponses } from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import {
+  renderPageWithPdfium,
+  renderThumbnailWithPdfium,
+} from '../lib/pdfiumRenderer';
 
 // pdf.js の Worker を設定
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -376,6 +380,13 @@ export function PdfViewer() {
   const [pendingPdfData, setPendingPdfData] = useState<ArrayBuffer | null>(
     null,
   );
+  // PDFium用：元のPDFデータとパスワードを保持
+  const [pdfArrayBuffer, setPdfArrayBuffer] = useState<ArrayBuffer | null>(
+    null,
+  );
+  const [currentPassword, setCurrentPassword] = useState<string | undefined>(
+    undefined,
+  );
   const [showThumbnails, setShowThumbnails] = useState(true);
   const [thumbnails, setThumbnails] = useState<
     (string | { isHeavy: true; reason: string })[]
@@ -641,12 +652,67 @@ export function PdfViewer() {
     [executeRender],
   );
 
-  // 重いページを強制レンダリング
+  // 重いページを強制レンダリング（pdf.js）
   const forceRenderHeavyPage = useCallback(() => {
     if (!pdfDoc || !heavyPageWarning) return;
     setHeavyPageWarning(null);
     executeRender(pdfDoc, heavyPageWarning.pageNum, searchQuery, true);
   }, [pdfDoc, heavyPageWarning, searchQuery, executeRender]);
+
+  // 重いページをPDFiumでレンダリング
+  const renderHeavyPageWithPdfium = useCallback(async () => {
+    if (!pdfArrayBuffer || !heavyPageWarning) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    setHeavyPageWarning(null);
+    setIsRendering(true);
+
+    try {
+      // UIの更新を許可
+      await yieldToMain();
+
+      // デバイスピクセル比を考慮
+      const outputScale = window.devicePixelRatio || 1;
+      const renderScale = scale * outputScale;
+
+      const imageData = await renderPageWithPdfium(
+        pdfArrayBuffer.slice(0), // コピーを渡す
+        heavyPageWarning.pageNum,
+        renderScale,
+        rotation,
+        currentPassword,
+      );
+
+      // Canvasに描画
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+
+      // CSS表示サイズ
+      canvas.style.width = `${imageData.width / outputScale}px`;
+      canvas.style.height = `${imageData.height / outputScale}px`;
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      // テキストレイヤーはクリア（PDFiumはテキスト抽出が別途必要）
+      const textLayer = textLayerRef.current;
+      if (textLayer) {
+        textLayer.innerHTML = '';
+        textLayer.style.width = `${imageData.width / outputScale}px`;
+        textLayer.style.height = `${imageData.height / outputScale}px`;
+      }
+    } catch (err) {
+      setError(
+        `PDFiumレンダリングエラー: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setIsRendering(false);
+    }
+  }, [pdfArrayBuffer, heavyPageWarning, scale, rotation, currentPassword]);
 
   // 検索を実行
   const performSearch = useCallback(async () => {
@@ -743,6 +809,9 @@ export function PdfViewer() {
     let cancelled = false;
     // 現在の長さを保存（エフェクト再実行時に続きから始めるため）
     const startPage = thumbnails.length + 1;
+    // PDFium用にArrayBufferをキャプチャ
+    const pdfDataForPdfium = pdfArrayBuffer;
+    const passwordForPdfium = currentPassword;
 
     const generateThumbnails = async () => {
       setIsGeneratingThumbnails(true);
@@ -760,6 +829,28 @@ export function PdfViewer() {
           // 重いページかどうかを事前にチェック
           const complexity = await analyzePageComplexity(page);
           if (complexity.isHeavy) {
+            // 重いページはPDFiumでレンダリングを試みる
+            if (pdfDataForPdfium) {
+              try {
+                const dataUrl = await renderThumbnailWithPdfium(
+                  pdfDataForPdfium.slice(0),
+                  pageNum,
+                  thumbScale,
+                  passwordForPdfium,
+                );
+                if (!cancelled) {
+                  setThumbnails((prev) => [...prev, dataUrl]);
+                }
+                continue;
+              } catch (err) {
+                console.warn(
+                  `PDFiumサムネイル生成失敗 (ページ${pageNum}):`,
+                  err,
+                );
+                // PDFiumが失敗した場合はプレースホルダーを表示
+              }
+            }
+            // PDFiumが使えない/失敗した場合はプレースホルダー
             if (!cancelled) {
               setThumbnails((prev) => [
                 ...prev,
@@ -811,7 +902,13 @@ export function PdfViewer() {
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, showThumbnails, thumbnails.length]);
+  }, [
+    pdfDoc,
+    showThumbnails,
+    thumbnails.length,
+    pdfArrayBuffer,
+    currentPassword,
+  ]);
 
   // 現在のページのサムネイルをスクロールして表示
   useEffect(() => {
@@ -849,6 +946,9 @@ export function PdfViewer() {
         setPassword('');
         setPasswordError(null);
         setPendingPdfData(null);
+        // PDFium用にデータとパスワードを保持
+        setPdfArrayBuffer(data);
+        setCurrentPassword(inputPassword);
       } catch (err) {
         if (
           err instanceof Error &&
@@ -894,6 +994,8 @@ export function PdfViewer() {
       setPassword('');
       setPasswordError(null);
       setThumbnails([]);
+      setPdfArrayBuffer(null);
+      setCurrentPassword(undefined);
 
       const arrayBuffer = await file.arrayBuffer();
       await loadPdfWithPassword(arrayBuffer);
@@ -1399,8 +1501,15 @@ export function PdfViewer() {
                       </div>
                     </div>
                     <div className="pdf-heavy-warning-buttons">
+                      <button
+                        type="button"
+                        onClick={renderHeavyPageWithPdfium}
+                        className="pdf-button-primary"
+                      >
+                        PDFiumでレンダリング（推奨）
+                      </button>
                       <button type="button" onClick={forceRenderHeavyPage}>
-                        レンダリングする
+                        pdf.jsでレンダリング
                       </button>
                     </div>
                   </div>
