@@ -1,18 +1,21 @@
 #root {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1.5rem;
+  box-sizing: border-box;
 }
 
 .app {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
 h1 {
-  font-size: 2rem;
+  font-size: 1.5rem;
+  font-weight: 600;
   margin: 0;
-  color: #fff;
+  color: #111827;
 }

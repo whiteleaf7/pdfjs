@@ -3,80 +3,104 @@
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-  width: 80vw;
-  max-width: 1200px;
+  width: 90vw;
+  max-width: 1400px;
   margin: 0 auto;
+  padding: 1rem;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
 }
 
+/* ドロップゾーン */
 .pdf-dropzone {
-  width: 100%;
-  padding: 2rem;
-  border: 2px dashed #666;
+  width: 80%;
+  padding: 1.5rem;
+  border: 1px dashed #d1d5db;
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+  background-color: #ffffff;
+  text-align: center;
 }
 
 .pdf-dropzone:hover {
-  border-color: #888;
-  background-color: rgba(255, 255, 255, 0.05);
+  border-color: #3b82f6;
+  background-color: #f0f9ff;
 }
 
 .pdf-dropzone p {
   margin: 0;
-  color: #888;
-  font-size: 0.9rem;
+  color: #6b7280;
+  font-size: 0.875rem;
 }
 
+/* エラー表示 */
 .pdf-error {
-  color: #ff6b6b;
-  padding: 0.5rem 1rem;
-  background-color: rgba(255, 107, 107, 0.1);
-  border-radius: 4px;
+  color: #dc2626;
+  padding: 0.75rem 1rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
   width: 100%;
   text-align: center;
 }
 
+/* ローディング表示 */
 .pdf-loading {
-  color: #4dabf7;
+  color: #3b82f6;
   padding: 1rem;
   font-size: 1.1rem;
 }
 
+/* ツールバー */
 .pdf-toolbar {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.5rem 1rem;
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   flex-wrap: wrap;
   justify-content: center;
 }
 
-.pdf-navigation {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
+/* ボタン共通スタイル */
 .pdf-navigation button,
 .pdf-zoom-controls button,
 .pdf-view-controls button {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  border: none;
-  border-radius: 4px;
-  background-color: #646cff;
-  color: white;
-  transition: background-color 0.2s;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #374151;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .pdf-navigation button:hover:not(:disabled),
 .pdf-zoom-controls button:hover:not(:disabled),
 .pdf-view-controls button:hover:not(:disabled) {
-  background-color: #535bf2;
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.pdf-navigation button:active:not(:disabled),
+.pdf-zoom-controls button:active:not(:disabled),
+.pdf-view-controls button:active:not(:disabled) {
+  background-color: #f3f4f6;
 }
 
 .pdf-navigation button:disabled,
@@ -86,7 +110,25 @@
   cursor: not-allowed;
 }
 
+/* アクティブなボタン */
+.pdf-view-controls button.active {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.pdf-view-controls button.active:hover {
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
 .pdf-view-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pdf-navigation {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -95,8 +137,10 @@
 .pdf-navigation span {
   min-width: 80px;
   text-align: center;
+  color: #374151;
 }
 
+/* ズームコントロール */
 .pdf-zoom-controls {
   display: flex;
   align-items: center;
@@ -104,33 +148,49 @@
 }
 
 .pdf-zoom-controls select {
-  padding: 0.5rem;
-  font-size: 0.9rem;
-  border: none;
-  border-radius: 4px;
-  background-color: #444;
-  color: white;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #374151;
   cursor: pointer;
 }
 
 .pdf-zoom-controls select:hover {
-  background-color: #555;
+  border-color: #d1d5db;
+}
+
+.pdf-zoom-controls select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ページインジケーター */
+.pdf-page-indicator {
+  min-width: 80px;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
 }
 
 /* スクロールコンテナ */
 .pdf-scroll-container {
   position: relative;
   flex: 1;
-  height: 70vh;
-  background-color: #333;
-  border-radius: 8px;
-  padding: 1rem;
+  height: 75vh;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
   overflow: auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
+  gap: 2rem;
 }
 
 /* 個別ページアイテム */
@@ -138,16 +198,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 /* ページ番号表示 */
 .pdf-page-number {
-  font-size: 0.8rem;
-  color: #888;
-  padding: 0.25rem 0.5rem;
-  background-color: rgba(0, 0, 0, 0.3);
-  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6b7280;
+  padding: 0.25rem 0.75rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
 }
 
 /* ページ内ローディング表示 */
@@ -162,23 +224,29 @@
   z-index: 5;
 }
 
-/* ツールバー内のページインジケーター */
-.pdf-page-indicator {
-  min-width: 80px;
-  text-align: center;
-  font-size: 0.9rem;
-  color: #ccc;
+/* PDF ページ */
+.pdf-page {
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
 }
 
-.pdf-page {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+/* ページラッパー */
+.pdf-page-wrapper {
+  position: relative;
+  display: inline-block;
+  margin: auto;
+  background-color: #ffffff;
+  border-radius: 4px;
 }
 
 /* 全画面表示スタイル */
 .pdf-viewer--fullscreen {
   max-width: 100%;
+  width: 100%;
   height: 100vh;
-  background-color: #1a1a1a;
+  background-color: #f9fafb;
   padding: 1rem;
   box-sizing: border-box;
 }
@@ -190,7 +258,15 @@
 .pdf-viewer--fullscreen .pdf-scroll-container {
   flex: 1;
   height: auto;
-  max-height: calc(100vh - 180px);
+  max-height: calc(100vh - 160px);
+}
+
+.pdf-viewer--fullscreen .pdf-thumbnail-panel {
+  max-height: calc(100vh - 160px);
+}
+
+.pdf-viewer--fullscreen .pdf-content-wrapper {
+  flex: 1;
 }
 
 /* 検索バー */
@@ -198,63 +274,58 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  padding: 0.5rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
   width: 100%;
-  max-width: 500px;
+  max-width: 400px;
 }
 
 .pdf-search-bar input {
   flex: 1;
-  padding: 0.5rem;
-  font-size: 0.9rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
   border: none;
-  border-radius: 4px;
-  background-color: #444;
-  color: white;
+  border-radius: 6px;
+  background-color: transparent;
+  color: #374151;
 }
 
 .pdf-search-bar input::placeholder {
-  color: #888;
+  color: #9ca3af;
 }
 
 .pdf-search-bar input:focus {
-  outline: 2px solid #646cff;
+  outline: none;
 }
 
 .pdf-search-bar button {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.875rem;
   cursor: pointer;
   border: none;
-  border-radius: 4px;
-  background-color: #646cff;
-  color: white;
-  transition: background-color 0.2s;
+  border-radius: 6px;
+  background-color: #f3f4f6;
+  color: #374151;
+  transition: background-color 0.15s;
 }
 
 .pdf-search-bar button:hover {
-  background-color: #535bf2;
+  background-color: #e5e7eb;
 }
 
 .pdf-search-count {
-  font-size: 0.85rem;
-  color: #aaa;
+  font-size: 0.8rem;
+  color: #6b7280;
   white-space: nowrap;
+  padding: 0 0.5rem;
 }
 
 .pdf-search-status {
-  font-size: 0.85rem;
-  color: #888;
+  font-size: 0.8rem;
+  color: #9ca3af;
   white-space: nowrap;
-}
-
-/* ページラッパー */
-.pdf-page-wrapper {
-  position: relative;
-  display: inline-block;
-  margin: auto;
 }
 
 /* テキストレイヤー */
@@ -276,13 +347,13 @@
 
 /* 検索ハイライト */
 .pdf-text-layer .pdf-search-highlight {
-  background-color: rgba(255, 230, 0, 0.85);
+  background-color: rgba(250, 204, 21, 0.8);
   color: transparent;
   border-radius: 2px;
 }
 
 .pdf-text-layer .pdf-search-current {
-  background-color: rgba(255, 140, 0, 0.9);
+  background-color: rgba(251, 146, 60, 0.9);
 }
 
 /* パスワードダイアログ */
@@ -292,7 +363,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -300,23 +371,26 @@
 }
 
 .pdf-password-dialog {
-  background-color: #2a2a2a;
-  border-radius: 12px;
+  background-color: #ffffff;
+  border-radius: 16px;
   padding: 2rem;
   max-width: 400px;
   width: 90%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 .pdf-password-dialog h3 {
   margin: 0 0 0.5rem 0;
-  color: #fff;
+  color: #111827;
   font-size: 1.25rem;
+  font-weight: 600;
 }
 
 .pdf-password-dialog p {
   margin: 0 0 1.5rem 0;
-  color: #aaa;
+  color: #6b7280;
   font-size: 0.9rem;
 }
 
@@ -328,26 +402,27 @@
 
 .pdf-password-dialog input[type='password'] {
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.75rem 1rem;
   font-size: 1rem;
-  border: 2px solid #444;
-  border-radius: 6px;
-  background-color: #333;
-  color: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #374151;
   box-sizing: border-box;
 }
 
 .pdf-password-dialog input[type='password']:focus {
   outline: none;
-  border-color: #646cff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .pdf-password-error {
-  color: #ff6b6b;
+  color: #dc2626;
   font-size: 0.85rem;
-  padding: 0.5rem;
-  background-color: rgba(255, 107, 107, 0.1);
-  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  background-color: #fef2f2;
+  border-radius: 6px;
 }
 
 .pdf-password-buttons {
@@ -360,39 +435,34 @@
 .pdf-password-buttons button {
   padding: 0.6rem 1.25rem;
   font-size: 0.9rem;
+  font-weight: 500;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.15s;
 }
 
 .pdf-password-buttons button[type='button'] {
-  background-color: #444;
-  color: #ccc;
+  background-color: #f3f4f6;
+  color: #374151;
 }
 
 .pdf-password-buttons button[type='button']:hover {
-  background-color: #555;
+  background-color: #e5e7eb;
 }
 
 .pdf-password-buttons button[type='submit'] {
-  background-color: #646cff;
-  color: white;
+  background-color: #3b82f6;
+  color: #ffffff;
 }
 
 .pdf-password-buttons button[type='submit']:hover:not(:disabled) {
-  background-color: #535bf2;
+  background-color: #2563eb;
 }
 
 .pdf-password-buttons button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* アクティブなボタン */
-.pdf-view-controls button.active {
-  background-color: #535bf2;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* コンテンツラッパー */
@@ -406,21 +476,22 @@
 
 /* サムネイルパネル */
 .pdf-thumbnail-panel {
-  width: 150px;
-  min-width: 150px;
-  background-color: #2a2a2a;
-  border-radius: 8px;
-  padding: 0.5rem;
+  width: 140px;
+  min-width: 140px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 0.75rem;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: calc(100vh - 200px);
+  max-height: 75vh;
 }
 
 .pdf-thumbnail-loading {
-  color: #888;
-  font-size: 0.85rem;
+  color: #6b7280;
+  font-size: 0.8rem;
   text-align: center;
   padding: 1rem;
 }
@@ -432,48 +503,49 @@
   padding: 0.5rem;
   background-color: transparent;
   border: 2px solid transparent;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition:
-    border-color 0.2s,
-    background-color 0.2s;
+    border-color 0.15s,
+    background-color 0.15s;
 }
 
 .pdf-thumbnail:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-color: #555;
+  background-color: #f9fafb;
+  border-color: #e5e7eb;
 }
 
 .pdf-thumbnail--active {
-  border-color: #646cff;
-  background-color: rgba(100, 108, 255, 0.1);
+  border-color: #3b82f6;
+  background-color: #eff6ff;
 }
 
 .pdf-thumbnail img {
   max-width: 100%;
   height: auto;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .pdf-thumbnail-label {
-  margin-top: 0.25rem;
-  font-size: 0.75rem;
-  color: #888;
+  margin-top: 0.375rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #6b7280;
 }
 
 .pdf-thumbnail--active .pdf-thumbnail-label {
-  color: #646cff;
+  color: #3b82f6;
   font-weight: 600;
 }
 
 /* 重いページのサムネイル */
 .pdf-thumbnail--heavy {
-  border-color: rgba(255, 165, 0, 0.3);
+  border-color: #fde68a;
 }
 
 .pdf-thumbnail--heavy:hover {
-  border-color: rgba(255, 165, 0, 0.6);
+  border-color: #fbbf24;
 }
 
 .pdf-thumbnail-heavy-placeholder {
@@ -483,28 +555,19 @@
   justify-content: center;
   width: 100%;
   aspect-ratio: 3 / 4;
-  background-color: rgba(255, 165, 0, 0.1);
+  background-color: #fef3c7;
   border-radius: 4px;
   gap: 0.25rem;
 }
 
 .pdf-thumbnail-heavy-icon {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
 }
 
 .pdf-thumbnail-heavy-text {
-  font-size: 0.65rem;
-  color: #ffa500;
+  font-size: 0.6rem;
+  color: #d97706;
   font-weight: 600;
-}
-
-/* 全画面時のサムネイルパネル */
-.pdf-viewer--fullscreen .pdf-thumbnail-panel {
-  max-height: calc(100vh - 180px);
-}
-
-.pdf-viewer--fullscreen .pdf-content-wrapper {
-  flex: 1;
 }
 
 /* スピナーアニメーション */
@@ -518,17 +581,17 @@
 }
 
 .pdf-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(100, 108, 255, 0.2);
-  border-top-color: #646cff;
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #3b82f6;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 .pdf-spinner--small {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-width: 2px;
 }
 
@@ -542,7 +605,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: rgba(255, 255, 255, 0.8);
   border-radius: 8px;
   z-index: 10;
 }
@@ -554,14 +617,14 @@
   align-items: center;
   gap: 0.5rem;
   padding: 1rem;
-  color: #888;
-  font-size: 0.85rem;
+  color: #6b7280;
+  font-size: 0.8rem;
 }
 
 /* 解析中テキスト */
 .pdf-analyzing-text {
   margin-top: 0.5rem;
-  color: #aaa;
+  color: #6b7280;
   font-size: 0.85rem;
 }
 
@@ -575,29 +638,32 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(255, 255, 255, 0.9);
   border-radius: 8px;
   z-index: 10;
 }
 
 .pdf-heavy-warning-content {
-  background-color: #2a2a2a;
-  border-radius: 12px;
+  background-color: #ffffff;
+  border-radius: 16px;
   padding: 1.5rem;
   max-width: 400px;
   text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e5e7eb;
 }
 
 .pdf-heavy-warning-content h4 {
   margin: 0 0 0.75rem 0;
-  color: #ffa500;
+  color: #d97706;
   font-size: 1.1rem;
 }
 
 .pdf-heavy-warning-content p {
   margin: 0 0 0.75rem 0;
-  color: #ccc;
+  color: #374151;
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -612,16 +678,17 @@
 .pdf-heavy-warning-buttons button {
   padding: 0.6rem 1.25rem;
   font-size: 0.9rem;
+  font-weight: 500;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.2s;
-  background-color: #646cff;
-  color: white;
+  transition: background-color 0.15s;
+  background-color: #3b82f6;
+  color: #ffffff;
 }
 
 .pdf-heavy-warning-buttons button:hover {
-  background-color: #535bf2;
+  background-color: #2563eb;
 }
 
 .pdf-heavy-warning-buttons .pdf-button-primary {
@@ -634,7 +701,8 @@
 
 /* 複雑さの詳細情報 */
 .pdf-complexity-details {
-  background-color: #1a1a1a;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 0.75rem;
   margin-bottom: 1rem;
@@ -646,7 +714,7 @@
 .pdf-complexity-section {
   margin-bottom: 0.75rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .pdf-complexity-section:last-child {
@@ -656,7 +724,7 @@
 }
 
 .pdf-complexity-section-title {
-  color: #646cff;
+  color: #3b82f6;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -667,7 +735,7 @@
   display: flex;
   justify-content: space-between;
   padding: 0.35rem 0;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #f3f4f6;
   font-size: 0.85rem;
 }
 
@@ -676,23 +744,23 @@
 }
 
 .pdf-complexity-row span:first-child {
-  color: #888;
+  color: #6b7280;
 }
 
 .pdf-complexity-row span:last-child {
-  color: #fff;
+  color: #111827;
   font-family: monospace;
 }
 
 .pdf-complexity-fonts {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #333;
+  border-top: 1px solid #e5e7eb;
 }
 
 .pdf-complexity-fonts > span {
   display: block;
-  color: #888;
+  color: #6b7280;
   font-size: 0.85rem;
   margin-bottom: 0.5rem;
 }
@@ -705,15 +773,16 @@
 }
 
 .pdf-complexity-fonts li {
-  color: #aaa;
+  color: #374151;
   font-size: 0.75rem;
   font-family: monospace;
   word-break: break-all;
 }
 
 .pdf-complexity-font-item {
-  background-color: #222;
-  border-radius: 4px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
   padding: 0.5rem;
   margin-bottom: 0.5rem;
 }
@@ -730,13 +799,13 @@
 
 /* 重いページの理由表示 */
 .pdf-heavy-reason {
-  color: #ffa500;
+  color: #92400e;
   font-size: 0.9rem;
   margin-bottom: 1rem;
   padding: 0.5rem 0.75rem;
-  background-color: rgba(255, 165, 0, 0.1);
-  border-radius: 4px;
-  border-left: 3px solid #ffa500;
+  background-color: #fef3c7;
+  border-radius: 6px;
+  border-left: 3px solid #f59e0b;
 }
 
 .pdf-heavy-reason p {
@@ -752,27 +821,27 @@
 }
 
 .pdf-complexity-section--warning {
-  background-color: rgba(255, 165, 0, 0.1);
-  border: 1px solid rgba(255, 165, 0, 0.3);
+  background-color: #fef3c7;
+  border: 1px solid #fde68a;
   border-radius: 6px;
   padding: 0.75rem;
   margin-bottom: 0.75rem;
 }
 
 .pdf-complexity-section--warning .pdf-complexity-section-title {
-  color: #ffa500;
+  color: #d97706;
 }
 
 .pdf-type3-explanation {
-  color: #aaa;
+  color: #6b7280;
   font-size: 0.8rem;
   margin: 0.5rem 0 0 0;
   font-style: italic;
 }
 
 .pdf-complexity-font-item--type3 {
-  border: 1px solid rgba(255, 165, 0, 0.5);
-  background-color: rgba(255, 165, 0, 0.1);
+  border: 1px solid #fde68a;
+  background-color: #fffbeb;
   position: relative;
 }
 
@@ -780,11 +849,11 @@
   position: absolute;
   top: -8px;
   right: 8px;
-  background-color: #ffa500;
-  color: #1a1a1a;
+  background-color: #f59e0b;
+  color: #ffffff;
   font-size: 0.65rem;
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   text-transform: uppercase;
 }
